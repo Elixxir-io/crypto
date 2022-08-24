@@ -293,6 +293,33 @@ func TestContact_GetChecksum_NilContact(t *testing.T) {
 	}
 }
 
+// Unit test of Contact.MarshalJSON and Contact.UnmarshalJSON
+func TestContact_MarshalUnmarshalJSON(t *testing.T) {
+	c := Contact{
+		ID:       id.NewIdFromUInt(rand.Uint64(), id.User, t),
+		DhPubKey: getCycInt(256),
+		Facts: fact.FactList{
+			{Fact: "myUsername", T: fact.Username},
+			{Fact: "devinputvalidation@elixxir.io", T: fact.Email},
+			{Fact: "6502530000US", T: fact.Phone},
+		},
+	}
+
+	marshal, err := c.MarshalJSON()
+	if err != nil {
+		t.Fatalf("Failed to marshal contact into JSON: %v", err)
+	}
+
+	t.Logf("JSON marshalled contact: %s", marshal)
+
+	newC := &Contact{}
+	err = newC.UnmarshalJSON(marshal)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal contact from JSON: %v", err)
+	}
+
+}
+
 // Unit test of Contact.GetFingerprint.
 func TestContact_GetFingerprint(t *testing.T) {
 	c := Contact{
