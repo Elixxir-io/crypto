@@ -71,14 +71,15 @@ var unmarshalVersions = map[string]func([]byte) (Contact, error){
 
 // Contact implements the Contact interface defined in interface/contact.go,
 // in go, the structure is meant to be edited directly, the functions are for
-// bindings compatibility. Any modifications to this object
-// should be ported to the contactData object.
-type Contact struct {
+// bindings compatibility.
+type contactData struct {
 	ID             *id.ID
 	DhPubKey       *cyclic.Int
 	OwnershipProof []byte
 	Facts          fact.FactList
 }
+
+type Contact contactData
 
 // ReadContact reads and unmarshal the contact from file and returns the
 // marshaled ID and DH public key.
@@ -280,27 +281,9 @@ func (c Contact) String() string {
 		"  Facts: " + c.Facts.Stringify()
 }
 
-// contactData is a serializable structure for
-// json.Marshal. This is effectively a copy of
-// the Contact object. Any modifications to said object
-// should be ported to this object.
-type contactData struct {
-	Id             *id.ID
-	DhPubKey       *cyclic.Int
-	OwnershipProof []byte
-	Facts          fact.FactList
-}
-
 // MarshalJSON adheres to the json.Marshaler interface.
 func (c Contact) MarshalJSON() ([]byte, error) {
-	cd := contactData{
-		Id:             c.ID,
-		DhPubKey:       c.DhPubKey,
-		OwnershipProof: c.OwnershipProof,
-		Facts:          c.Facts,
-	}
-
-	return json.Marshal(cd)
+	return json.Marshal(contactData(c))
 }
 
 // UnmarshalJSON adheres to the json.Unmarshaler interface.
@@ -310,14 +293,7 @@ func (c *Contact) UnmarshalJSON(b []byte) error {
 	if err != nil {
 		return err
 	}
-
-	*c = Contact{
-		ID:             cd.Id,
-		DhPubKey:       cd.DhPubKey,
-		OwnershipProof: cd.OwnershipProof,
-		Facts:          cd.Facts,
-	}
-
+	*c = Contact(cd)
 	return nil
 }
 
