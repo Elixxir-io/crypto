@@ -12,6 +12,7 @@ import (
 	"crypto"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"github.com/pkg/errors"
 	"github.com/skip2/go-qrcode"
 	"gitlab.com/elixxir/crypto/cyclic"
@@ -70,7 +71,8 @@ var unmarshalVersions = map[string]func([]byte) (Contact, error){
 
 // Contact implements the Contact interface defined in interface/contact.go,
 // in go, the structure is meant to be edited directly, the functions are for
-// bindings compatibility.
+// bindings compatibility. Any modifications to this object
+// should be ported to the contactData object.
 type Contact struct {
 	ID             *id.ID
 	DhPubKey       *cyclic.Int
@@ -276,6 +278,47 @@ func (c Contact) String() string {
 		"  DhPubKey: " + dhPubKeyString +
 		"  OwnershipProof: " + base64.StdEncoding.EncodeToString(c.OwnershipProof) +
 		"  Facts: " + c.Facts.Stringify()
+}
+
+// contactData is a serializable structure for
+// json.Marshal. This is effectively a copy of
+// the Contact object. Any modifications to said object
+// should be ported to this object.
+type contactData struct {
+	Id             *id.ID
+	DhPubKey       *cyclic.Int
+	OwnershipProof []byte
+	Facts          fact.FactList
+}
+
+// MarshalJSON adheres to the json.Marshaler interface.
+func (c Contact) MarshalJSON() ([]byte, error) {
+	cd := contactData{
+		Id:             c.ID,
+		DhPubKey:       c.DhPubKey,
+		OwnershipProof: c.OwnershipProof,
+		Facts:          c.Facts,
+	}
+
+	return json.Marshal(cd)
+}
+
+// UnmarshalJSON adheres to the json.Unmarshaler interface.
+func (c *Contact) UnmarshalJSON(b []byte) error {
+	cd := contactData{}
+	err := json.Unmarshal(b, &cd)
+	if err != nil {
+		return err
+	}
+
+	*c = Contact{
+		ID:             cd.Id,
+		DhPubKey:       cd.DhPubKey,
+		OwnershipProof: cd.OwnershipProof,
+		Facts:          cd.Facts,
+	}
+
+	return nil
 }
 
 // Equal determines if the two contacts have the same values.
