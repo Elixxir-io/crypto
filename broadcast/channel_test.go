@@ -23,9 +23,8 @@ func TestChannel_PrettyPrint(t *testing.T) {
 	name := "Test Channel"
 	desc := "This is a test channel"
 
-
-	channel1, _, err := NewChannel(name, desc, 1000, rng)
-	if err!=nil{
+	channel1, _, err := NewChannel(name, desc, Public, 1000, rng)
+	if err != nil {
 		t.Fatalf(err.Error())
 	}
 
@@ -34,7 +33,7 @@ func TestChannel_PrettyPrint(t *testing.T) {
 
 	channel2, err := NewChannelFromPrettyPrint(pretty1)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%+v", err)
 	}
 
 	pretty2 := channel2.PrettyPrint()
@@ -45,8 +44,8 @@ func TestChannel_PrettyPrint(t *testing.T) {
 			"\nReceived: %s", pretty1, pretty2)
 	}
 
-	//verify the new channel made from the pretty print is
-	if !channel2.Verify(){
+	// verify the new channel made from the pretty print is
+	if !channel2.Verify() {
 		t.Errorf("the channel failed to verify")
 	}
 }
@@ -68,7 +67,8 @@ func TestChannel_MarshalJson(t *testing.T) {
 	}
 
 	pubKeyPem := oldRsa.CreatePublicKeyPem(pk.Public().GetOldRSA())
-	rid, err := NewChannelID(name, desc, secret, salt, HashSecret(pubKeyPem))
+	rid, err := NewChannelID(
+		name, desc, Public, secret, salt, HashSecret(pubKeyPem))
 	channel := Channel{
 		ReceptionID:   rid,
 		Name:          name,
@@ -142,7 +142,8 @@ func TestRChanel_Marshal_Unmarshal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rid, err := NewChannelID(name, desc, secret, salt, HashPubKey(pk.Public()))
+	rid, err := NewChannelID(
+		name, desc, Public, secret, salt, HashPubKey(pk.Public()))
 	ac := &Channel{
 		RsaPubKeyLength: 528,
 		ReceptionID:     rid,
@@ -173,9 +174,9 @@ func TestNewChannel_Verify(t *testing.T) {
 	name := "Asymmetric channel"
 	desc := "Asymmetric channel description"
 
-	ac, _, _ := NewChannel(name, desc, 1000, rng)
+	ac, _, _ := NewChannel(name, desc, Public, 1000, rng)
 
-	if !ac.Verify(){
+	if !ac.Verify() {
 		t.Fatalf("Channel ID should have verified")
 	}
 }
@@ -203,18 +204,19 @@ func TestChannel_Verify_Happy(t *testing.T) {
 	hashedSecret := HashSecret(secret)
 	hashedPubkey := HashPubKey(pk.Public())
 
-	rid, err := NewChannelID(name, desc, salt, hashedPubkey, hashedSecret)
+	rid, err := NewChannelID(
+		name, desc, Public, salt, hashedPubkey, hashedSecret)
 	ac := &Channel{
 		RsaPubKeyLength: 528,
 		ReceptionID:     rid,
 		Name:            name,
 		Description:     desc,
 		Salt:            salt,
-		Secret: 		secret,
-		RsaPubKeyHash:  hashedPubkey,
+		Secret:          secret,
+		RsaPubKeyHash:   hashedPubkey,
 	}
 
-	if !ac.Verify(){
+	if !ac.Verify() {
 		t.Fatalf("Channel ID should have verified")
 	}
 }
@@ -247,11 +249,11 @@ func TestChannel_Verify_Fail_BadVerify(t *testing.T) {
 		Name:            name,
 		Description:     desc,
 		Salt:            salt,
-		Secret: 		secret,
-		RsaPubKeyHash:  hashedPubkey,
+		Secret:          secret,
+		RsaPubKeyHash:   hashedPubkey,
 	}
 
-	if ac.Verify(){
+	if ac.Verify() {
 		t.Fatalf("Channel ID should not have verified")
 	}
 }
@@ -279,18 +281,19 @@ func TestChannel_Verify_BadGeneration(t *testing.T) {
 	hashedSecret := HashSecret(secret)
 	hashedPubkey := HashPubKey(pk.Public())
 
-	rid, err := NewChannelID(name, desc, salt, hashedPubkey, hashedSecret)
+	rid, err := NewChannelID(
+		name, desc, Public, salt, hashedPubkey, hashedSecret)
 	ac := &Channel{
 		RsaPubKeyLength: 528,
 		ReceptionID:     rid,
 		Name:            name,
 		Description:     desc,
 		Salt:            []byte{69},
-		Secret: 		secret,
-		RsaPubKeyHash:  hashedPubkey,
+		Secret:          secret,
+		RsaPubKeyHash:   hashedPubkey,
 	}
 
-	if ac.Verify(){
+	if ac.Verify() {
 		t.Fatalf("Channel ID should not have verified")
 	}
 }
