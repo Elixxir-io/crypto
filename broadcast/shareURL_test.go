@@ -40,9 +40,6 @@ func TestChannel_ShareURL_DecodeShareURL(t *testing.T) {
 			t.Errorf("Decoded %s channel does not match original."+
 				"\nexpected: %+v\nreceived: %+v", level, *c, *newChannel)
 		}
-
-		t.Log(address)
-		t.Log(password)
 	}
 }
 
