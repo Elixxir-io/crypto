@@ -15,6 +15,8 @@ import (
 	"testing"
 )
 
+// Tests that a URL created via Channel.ShareURL can be decoded using
+// DecodeShareURL and that it matches the original.
 func TestChannel_ShareURL_DecodeShareURL(t *testing.T) {
 	host := "https://internet.speakeasy.tech/"
 	rng := csprng.NewSystemRNG()
@@ -39,6 +41,37 @@ func TestChannel_ShareURL_DecodeShareURL(t *testing.T) {
 		if !reflect.DeepEqual(*c, *newChannel) {
 			t.Errorf("Decoded %s channel does not match original."+
 				"\nexpected: %+v\nreceived: %+v", level, *c, *newChannel)
+		}
+	}
+}
+
+// Tests that Channel.ShareURL returns an error for an invalid host.
+func TestChannel_ShareURL_ParseError(t *testing.T) {
+	rng := csprng.NewSystemRNG()
+	c, _, err := NewChannel("A", "B", Public, 1000, rng)
+	if err != nil {
+		t.Fatalf("Failed to create new channel: %+v", err)
+	}
+
+	host := "invalidHost\x7f"
+	address, _, err := c.ShareURL(host, rng)
+	if err == nil {
+		t.Errorf("Expected error for invalid host URL: %s", address)
+	}
+}
+
+// Tests that DecodeShareURL returns errors for a list of invalid URLs.
+func TestChannel_DecodeShareURL(t *testing.T) {
+	invalidURLs := []string{
+		"test?",
+		"test?v=0",
+		"test?v=0&d=2",
+	}
+
+	for _, u := range invalidURLs {
+		_, err := DecodeShareURL(u, "")
+		if err == nil {
+			t.Errorf("Expected error for invalid URL: %s", u)
 		}
 	}
 }
