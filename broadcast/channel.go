@@ -221,6 +221,11 @@ func (c *Channel) UnmarshalJson(b []byte) error {
 	return nil
 }
 
+// PrivacyLevel returns the level of privacy set for this channel.
+func (c *Channel) PrivacyLevel() PrivacyLevel {
+	return c.level
+}
+
 // PrettyPrint prints a human-pasteable serialization of this Channel type.
 //
 // Example:
