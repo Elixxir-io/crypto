@@ -65,6 +65,10 @@ func TestChannel_DecodeShareURL(t *testing.T) {
 	invalidURLs := []string{
 		"test?",
 		"test?v=0",
+		"test?v=q",
+		"test?v=2",
+		"test?v=0&s=2",
+		"test?v=A&s=2&2Level=0",
 		"test?v=0&d=2",
 	}
 
