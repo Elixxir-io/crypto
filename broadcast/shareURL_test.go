@@ -12,6 +12,7 @@ import (
 	"gitlab.com/xx_network/crypto/csprng"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -60,22 +61,43 @@ func TestChannel_ShareURL_ParseError(t *testing.T) {
 	}
 }
 
+// Tests that DecodeShareURL returns an error for an invalid host.
+func Test_DecodeShareURL_ParseError(t *testing.T) {
+	host := "invalidHost\x7f"
+	c, err := DecodeShareURL(host, "")
+	if err == nil {
+		t.Errorf("Expected error for invalid host URL: %+v", c)
+	}
+}
+
 // Tests that DecodeShareURL returns errors for a list of invalid URLs.
-func TestChannel_DecodeShareURL(t *testing.T) {
-	invalidURLs := []string{
-		"test?",
-		"test?v=0",
-		"test?v=q",
-		"test?v=2",
-		"test?v=0&s=2",
-		"test?v=A&s=2&2Level=0",
-		"test?v=0&d=2",
+func TestChannel_DecodeShareURL_Error(t *testing.T) {
+	type test struct {
+		url, password, err string
 	}
 
-	for _, u := range invalidURLs {
-		_, err := DecodeShareURL(u, "")
-		if err == nil {
-			t.Errorf("Expected error for invalid URL: %s", u)
+	tests := []test{
+		{"test?", "", urlVersionErr},
+		{"test?v=0", "", malformedUrlErr},
+		{"test?v=q", "", parseVersionErr},
+		{"test?v=2", "", versionErr},
+		{"test?v=0&s=AA==", "", parseLevelErr},
+		{"test?v=0&0Name=2", "", noPasswordErr},
+		{"test?v=0&d=2", "", noPasswordErr},
+		{"test?v=0&s=A&2Level=Public", "", parseSaltErr},
+		{"test?v=0&s=AA==&2Level=Public&k=A", "", parseRsaPubKeyHashErr},
+		{"test?v=0&s=AA==&2Level=Public&k=AA==&l=q", "", parseRsaPubKeyLengthErr},
+		{"test?v=0&s=AA==&2Level=Public&k=AA==&l=5&p=t", "", parseRsaSubPayloadsErr},
+		{"test?v=0&s=AA==&2Level=Public&k=AA==&l=5&p=1&e=A", "", parseSecretErr},
+		{"test?v=0&0Name=2", "hello", decryptErr},
+		{"test?v=0&d=2", "hello", decodeEncryptedErr},
+	}
+
+	for i, tt := range tests {
+		_, err := DecodeShareURL(tt.url, tt.password)
+		if err == nil || !strings.Contains(err.Error(), strings.Split(tt.err, "%")[0]) {
+			t.Errorf("Did not receive expected error for URL %q (%d)."+
+				"\nexpected: %s\nreceived: %+v", tt.url, i, tt.err, err)
 		}
 	}
 }
