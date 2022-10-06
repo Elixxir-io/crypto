@@ -135,6 +135,60 @@ func TestDecodeShareURL_Error(t *testing.T) {
 	}
 }
 
+// Tests that GetShareUrlType returns the expected PrivacyLevel for every time
+// of URL.
+func TestGetShareUrlType(t *testing.T) {
+	tests := map[string]PrivacyLevel{
+		"https://internet.speakeasy.tech/?0Name=My+Channel&1Description=Here+is+information+about+my+channel.&2Level=Public&e=z73XYenRG65WHmJh8r%2BanZ71r2rPOHjTgCSEh05TUlQ%3D&k=9b1UtGnZ%2B%2FM3hnXTfNRN%2BZKXcsHyZE00vZ9We0oDP90%3D&l=493&p=1&s=FyaykitzwwhRVvW%2FkqdKKbEvSiVcj9hwhFbvgb2UCDM%3D&v=0":                                                                             Public,
+		"https://internet.speakeasy.tech/?0Name=My+Channel&1Description=Here+is+information+about+my+channel.&d=rmU6scJhBFDKqRsXzPJUIx6WTaKvqCLv8Cuq0XaWe11d%2Bt3s3F5vj%2BgDfAUIEn1cMxjD997QBKoDUmjWppN63DWw1LDzYjfVWW7LvvOvPIo6thLb78NtN%2BhcG2gX54UM0Ieu3Uerpp2BEkUuEUmRqCR35oqSApC1P97a4FJJv2VGQwULO6ZaZcowoG3Z%2FNyJRXNphsu6APz6%2FhN%2BhcfiejM%3D&v=0":                         Private,
+		"https://internet.speakeasy.tech/?d=2VNLAz%2FqXGlZ6b7gRBmR8Q41S25Y0Q63MDpTJ58DZKaYCBDYEcOBBe7vZYQ6tLFL8%2BG7mvBaierirBbNlaI8iyd%2B2vIkMiPbRm3PFLX2xTW5eVCDMnbEmMaYfhmSYJuzi7oHaZykmtyQ4SQftgdRK7R0kko3wwmk4gzUO3FJ7HZhAacgh2dpcTwySjfLjhB5K1QK2HPxQiLvCEm4Qg4Lv5ttk03TiOe%2BGV2ThW0y4lgS%2BhczwZrEicQSjFotYub0Qzn%2Bi%2B4PNW2jkvWpdy%2B338hMar%2BafFfQQ99Hf0y%2FA8E%3D&v=0": Secret,
+	}
+
+	for u, expected := range tests {
+		pl, err := GetShareUrlType(u)
+		if err != nil {
+			t.Errorf("Failed to get type of URL %q: %+v", u, err)
+		}
+
+		if expected != pl {
+			t.Errorf("Did not receive expected privacy level."+
+				"\nexpected: %s\nreceived: %s", expected, pl)
+		}
+	}
+}
+
+// Tests that GetShareUrlType returns an error for an invalid host.
+func TestGetShareUrlType_ParseError(t *testing.T) {
+	host := "invalidHost\x7f"
+	c, err := GetShareUrlType(host)
+	if err == nil {
+		t.Errorf("Expected error for invalid host URL: %+v", c)
+	}
+}
+
+// Tests that GetShareUrlType returns errors for a list of invalid URLs.
+func TestGetShareUrlType_Error(t *testing.T) {
+	type test struct {
+		url, password, err string
+	}
+
+	tests := []test{
+		{"test?", "", urlVersionErr},
+		{"test?v=0", "", malformedUrlErr},
+		{"test?v=q", "", parseVersionErr},
+		{"test?v=2", "", versionErr},
+	}
+
+	for i, tt := range tests {
+		_, err := GetShareUrlType(tt.url)
+		expected := strings.Split(tt.err, "%")[0]
+		if err == nil || !strings.Contains(err.Error(), expected) {
+			t.Errorf("Did not receive expected error for URL %q (%d)."+
+				"\nexpected: %s\nreceived: %+v", tt.url, i, tt.err, err)
+		}
+	}
+}
+
 // Tests that a channel can be encoded to a URL using
 // Channel.encodePublicShareURL and decoded to a new channel using
 // Channel.decodePublicShareURL and that it matches the original.

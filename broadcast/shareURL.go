@@ -204,6 +204,41 @@ func DecodeShareURL(address, password string) (*Channel, error) {
 	return c, nil
 }
 
+// GetShareUrlType determines the PrivacyLevel of the channel's URL.
+func GetShareUrlType(address string) (PrivacyLevel, error) {
+	u, err := url.Parse(address)
+	if err != nil {
+		return 0, errors.Errorf(parseShareUrlErr, err)
+	}
+
+	q := u.Query()
+
+	// Check the version
+	versionString := q.Get(versionKey)
+	if versionString == "" {
+		return 0, errors.New(urlVersionErr)
+	}
+	v, err := strconv.Atoi(versionString)
+	if err != nil {
+		return 0, errors.Errorf(parseVersionErr, err)
+	} else if v != shareUrlVersion {
+		return 0, errors.Errorf(versionErr, shareUrlVersion, v)
+	}
+
+	// Decode the URL based on the information available (e.g., only the public
+	// URL has a salt, so if the saltKey is specified, it is a public URL)
+	switch {
+	case q.Has(saltKey):
+		return Public, nil
+	case q.Has(nameKey):
+		return Private, nil
+	case q.Has(dataKey):
+		return Secret, nil
+	default:
+		return 0, errors.New(malformedUrlErr)
+	}
+}
+
 // encodePublicShareURL encodes the channel to a Public share URL.
 func (c *Channel) encodePublicShareURL(q url.Values) url.Values {
 	q.Set(nameKey, c.Name)
