@@ -40,6 +40,62 @@ const (
 	dataKey            = "d"
 )
 
+// Error messages.
+const (
+	// Channel.ShareURL
+	parseHostUrlErr           = "could not parse host URL: %+v"
+	generatePhrasePasswordErr = "failed to generate password: %+v"
+
+	// DecodeShareURL
+	parseShareUrlErr    = "could not parse URL: %+v"
+	urlVersionErr       = "no version found"
+	parseVersionErr     = "failed to parse version: %+v"
+	versionErr          = "version mismatch: require v%d, found v%d"
+	decodePublicUrlErr  = "could not decode public share URL: %+v"
+	decodePrivateUrlErr = "could not decode private share URL: %+v"
+	decodeSecretUrlErr  = "could not decode secret share URL: %+v"
+	noPasswordErr       = "no password specified"
+	malformedUrlErr     = "URL is missing required data"
+	newReceptionIdErr   = "could not create new channel ID: %+v"
+
+	// Channel.decodePublicShareURL
+	parseLevelErr           = "failed to parse privacy level: %+v"
+	parseSaltErr            = "failed to parse Salt: %+v"
+	parseRsaPubKeyHashErr   = "failed to parse RsaPubKeyHash: %+v"
+	parseRsaPubKeyLengthErr = "failed to parse RsaPubKeyLength: %+v"
+	parseRsaSubPayloadsErr  = "failed to parse RSASubPayloads: %+v"
+	parseSecretErr          = "failed to parse Secret: %+v"
+
+	// Channel.decodePrivateShareURL and Channel.decodeSecretShareURL
+	decodeEncryptedErr = "could not decode encrypted data string: %+v"
+	decryptErr         = "could not decrypt encrypted data: %+v"
+	unmarshalUrlErr    = "could not unmarshal data: %+v"
+
+	// Channel.unmarshalPrivateShareUrlSecrets and
+	// Channel.unmarshalSecretShareUrlSecrets
+	readPrivacyLevelErr             = "could not read privacy level byte: %+v"
+	readNameLenErr                  = "could not read Name length: %+v"
+	readNameLenNumBytesErr          = "expected %d bytes for Name length, found %d bytes"
+	readNameErr                     = "could not read Name: %+v"
+	readNameNumBytesErr             = "expected %d bytes for Name, found %d bytes"
+	readDescLenErr                  = "could not read Description length: %+v"
+	readDescLenNumBytesErr          = "expected %d bytes for Description length, found %d bytes"
+	readDescErr                     = "could not read Description: %+v"
+	readDescNumBytesErr             = "expected %d bytes for Description, found %d bytes"
+	readSaltErr                     = "could not read Salt: %+v"
+	readSaltNumBytesErr             = "expected %d bytes for Salt, found %d bytes"
+	readRsaPubKeyHashLenErr         = "could not read RsaPubKeyHash length: %+v"
+	readRsaPubKeyHashLenNumBytesErr = "expected %d bytes for RsaPubKeyHash length, found %d bytes"
+	readRsaPubKeyHashErr            = "could not read RsaPubKeyHash: %+v"
+	readRsaPubKeyHashNumBytesErr    = "expected %d bytes for RsaPubKeyHash, found %d bytes"
+	readRsaPubKeyLenErr             = "could not read RsaPubKeyLength: %+v"
+	readRsaPubKeyLenNumBytesErr     = "expected %d bytes for RsaPubKeyLength, found %d bytes"
+	readRSASubPayloadsErr           = "could not read RSASubPayloads: %+v"
+	readRSASubPayloadsNumBytesErr   = "expected %d bytes for RSASubPayloads, found %d bytes"
+	readSecretErr                   = "could not read Secret: %+v"
+	readSecretNumBytesErr           = "expected %d bytes for Secret, found %d bytes"
+)
+
 // ShareURL generates a URL that can be used to share this channel with others
 // on the given host.
 //
@@ -55,7 +111,7 @@ const (
 func (c *Channel) ShareURL(host string, csprng io.Reader) (string, string, error) {
 	u, err := url.Parse(host)
 	if err != nil {
-		return "", "", err
+		return "", "", errors.Errorf(parseHostUrlErr, err)
 	}
 
 	// If the privacy level is Private or Secret, then generate a password
@@ -63,7 +119,7 @@ func (c *Channel) ShareURL(host string, csprng io.Reader) (string, string, error
 	if c.level != Public {
 		password, err = generatePhrasePassword(8, csprng)
 		if err != nil {
-			return "", "", err
+			return "", "", errors.Errorf(generatePhrasePasswordErr, err)
 		}
 	}
 
@@ -82,7 +138,7 @@ func (c *Channel) ShareURL(host string, csprng io.Reader) (string, string, error
 
 	u.RawQuery = q.Encode()
 
-	return u.String(), password, err
+	return u.String(), password, nil
 }
 
 // DecodeShareURL decodes the given URL to a Channel. If the channel is Private
@@ -146,20 +202,6 @@ func DecodeShareURL(address, password string) (*Channel, error) {
 	}
 
 	return c, nil
-}
-
-func generatePhrasePassword(numWords int, csprng io.Reader) (string, error) {
-	g, err := diceware.NewGenerator(&diceware.GeneratorInput{RandReader: csprng})
-	if err != nil {
-		return "", err
-	}
-
-	words, err := g.Generate(numWords)
-	if err != nil {
-		return "", err
-	}
-
-	return strings.Join(words, " "), nil
 }
 
 // encodePublicShareURL encodes the channel to a Public share URL.
@@ -322,6 +364,10 @@ func (c *Channel) marshalPrivateShareUrlSecrets() []byte {
 	return buff.Bytes()
 }
 
+const (
+	uint8Len = 8
+)
+
 // unmarshalPrivateShareUrlSecrets unmarshalls the byte slice into the channel's
 // level, Salt, RsaPubKeyHash, RsaPubKeyLength, RSASubPayloads, and Secret.
 func (c *Channel) unmarshalPrivateShareUrlSecrets(data []byte) error {
@@ -336,46 +382,60 @@ func (c *Channel) unmarshalPrivateShareUrlSecrets(data []byte) error {
 
 	// Salt
 	c.Salt = make([]byte, saltSize)
-	_, err = buff.Read(c.Salt)
+	n, err := buff.Read(c.Salt)
 	if err != nil {
 		return errors.Errorf(readSaltErr, err)
+	} else if n != saltSize {
+		return errors.Errorf(readSaltNumBytesErr, saltSize, n)
 	}
 
 	// Get length of RsaPubKeyHash
-	b := make([]byte, 8)
-	_, err = buff.Read(b)
+	b := make([]byte, uint8Len)
+	n, err = buff.Read(b)
 	if err != nil {
 		return errors.Errorf(readRsaPubKeyHashLenErr, err)
+	} else if n != uint8Len {
+		return errors.Errorf(
+			readRsaPubKeyHashLenNumBytesErr, uint8Len, n)
 	}
 
 	// RsaPubKeyHash
-	c.RsaPubKeyHash = make([]byte, binary.LittleEndian.Uint64(b))
-	_, err = buff.Read(c.RsaPubKeyHash)
+	rsaPubKeyHashLen := int(binary.LittleEndian.Uint64(b))
+	c.RsaPubKeyHash = make([]byte, rsaPubKeyHashLen)
+	n, err = buff.Read(c.RsaPubKeyHash)
 	if err != nil {
 		return errors.Errorf(readRsaPubKeyHashErr, err)
+	} else if n != rsaPubKeyHashLen {
+		return errors.Errorf(readRsaPubKeyHashNumBytesErr, rsaPubKeyHashLen, n)
 	}
 
 	// RsaPubKeyLength
-	b = make([]byte, 8)
-	_, err = buff.Read(b)
+	b = make([]byte, uint8Len)
+	n, err = buff.Read(b)
 	if err != nil {
 		return errors.Errorf(readRsaPubKeyLenErr, err)
+	} else if n != uint8Len {
+		return errors.Errorf(readRsaPubKeyLenNumBytesErr, uint8Len, n)
 	}
 	c.RsaPubKeyLength = int(binary.LittleEndian.Uint64(b))
 
 	// RSASubPayloads
-	b = make([]byte, 8)
-	_, err = buff.Read(b)
+	b = make([]byte, uint8Len)
+	n, err = buff.Read(b)
 	if err != nil {
 		return errors.Errorf(readRSASubPayloadsErr, err)
+	} else if n != uint8Len {
+		return errors.Errorf(readRSASubPayloadsNumBytesErr, uint8Len, n)
 	}
 	c.RSASubPayloads = int(binary.LittleEndian.Uint64(b))
 
 	// Secret
 	c.Secret = make([]byte, secretSize)
-	_, err = buff.Read(c.Secret)
+	n, err = buff.Read(c.Secret)
 	if err != nil {
 		return errors.Errorf(readSecretErr, err)
+	} else if n != secretSize {
+		return errors.Errorf(readSecretNumBytesErr, secretSize, n)
 	}
 
 	return nil
@@ -435,48 +495,6 @@ func (c *Channel) marshalSecretShareUrlSecrets() []byte {
 	return buff.Bytes()
 }
 
-// Error messages.
-const (
-	// DecodeShareURL
-	parseShareUrlErr    = "could not parse URL: %+v"
-	urlVersionErr       = "no version found"
-	parseVersionErr     = "failed to parse version: %+v"
-	versionErr          = "version mismatch: require v%d, found v%d"
-	decodePublicUrlErr  = "could not decode public share URL: %+v"
-	decodePrivateUrlErr = "could not decode private share URL: %+v"
-	decodeSecretUrlErr  = "could not decode secret share URL: %+v"
-	noPasswordErr       = "no password specified"
-	malformedUrlErr     = "URL is missing required data"
-	newReceptionIdErr   = "could not create new channel ID: %+v"
-
-	// Channel.decodePublicShareURL
-	parseLevelErr           = "failed to parse privacy level: %+v"
-	parseSaltErr            = "failed to parse Salt: %+v"
-	parseRsaPubKeyHashErr   = "failed to parse RsaPubKeyHash: %+v"
-	parseRsaPubKeyLengthErr = "failed to parse RsaPubKeyLength: %+v"
-	parseRsaSubPayloadsErr  = "failed to parse RSASubPayloads: %+v"
-	parseSecretErr          = "failed to parse Secret: %+v"
-
-	// Channel.decodePrivateShareURL and Channel.decodeSecretShareURL
-	decodeEncryptedErr = "could not decode encrypted data string: %+v"
-	decryptErr         = "could not decrypt encrypted data: %+v"
-	unmarshalUrlErr    = "could not unmarshal data: %+v"
-
-	// Channel.unmarshalPrivateShareUrlSecrets and
-	// Channel.unmarshalSecretShareUrlSecrets
-	readPrivacyLevelErr     = "could not read privacy level byte: %+v"
-	readNameLenErr          = "could not read Name length: %+v"
-	readNameErr             = "could not read Name: %+v"
-	readDescLenErr          = "could not read Description length: %+v"
-	readDescErr             = "could not read Description: %+v"
-	readSaltErr             = "could not read Salt: %+v"
-	readRsaPubKeyHashLenErr = "could not read RsaPubKeyHash length: %+v"
-	readRsaPubKeyHashErr    = "could not read RsaPubKeyHash: %+v"
-	readRsaPubKeyLenErr     = "could not read RsaPubKeyLength: %+v"
-	readRSASubPayloadsErr   = "could not read RSASubPayloads: %+v"
-	readSecretErr           = "could not read Secret: %+v"
-)
-
 // unmarshalPrivateShareUrlSecrets unmarshalls the byte slice into the channel's
 // level, Name, Description, Salt, RsaPubKeyHash, RsaPubKeyLength,
 // RSASubPayloads, and Secret.
@@ -491,80 +509,121 @@ func (c *Channel) unmarshalSecretShareUrlSecrets(data []byte) error {
 	c.level = PrivacyLevel(level)
 
 	// Length of Name
-	b := make([]byte, 8)
-	_, err = buff.Read(b)
+	b := make([]byte, uint8Len)
+	n, err := buff.Read(b)
 	if err != nil {
 		return errors.Errorf(readNameLenErr, err)
+	} else if n != uint8Len {
+		return errors.Errorf(readNameLenNumBytesErr, uint8Len, n)
 	}
 
 	// Name
-	name := make([]byte, binary.LittleEndian.Uint64(b))
-	_, err = buff.Read(name)
+	nameLen := int(binary.LittleEndian.Uint64(b))
+	name := make([]byte, nameLen)
+	n, err = buff.Read(name)
 	if err != nil {
 		return errors.Errorf(readNameErr, err)
+	} else if n != nameLen {
+		return errors.Errorf(readNameNumBytesErr, nameLen, n)
 	}
 	c.Name = string(name)
 
 	// Length of Description
-	b = make([]byte, 8)
-	_, err = buff.Read(b)
+	b = make([]byte, uint8Len)
+	n, err = buff.Read(b)
 	if err != nil {
 		return errors.Errorf(readDescLenErr, err)
+	} else if n != uint8Len {
+		return errors.Errorf(readDescLenNumBytesErr, uint8Len, n)
 	}
 
 	// Description
-	description := make([]byte, binary.LittleEndian.Uint64(b))
-	_, err = buff.Read(description)
+	descriptionLen := int(binary.LittleEndian.Uint64(b))
+	description := make([]byte, descriptionLen)
+	n, err = buff.Read(description)
 	if err != nil {
 		return errors.Errorf(readDescErr, err)
+	} else if n != descriptionLen {
+		return errors.Errorf(readDescNumBytesErr, descriptionLen, n)
 	}
 	c.Description = string(description)
 
 	// Salt
 	c.Salt = make([]byte, saltSize)
-	_, err = buff.Read(c.Salt)
+	n, err = buff.Read(c.Salt)
 	if err != nil {
 		return errors.Errorf(readSaltErr, err)
+	} else if n != saltSize {
+		return errors.Errorf(readSaltNumBytesErr, saltSize, n)
 	}
 
 	// Get length of RsaPubKeyHash
-	b = make([]byte, 8)
-	_, err = buff.Read(b)
+	b = make([]byte, uint8Len)
+	n, err = buff.Read(b)
 	if err != nil {
 		return errors.Errorf(readRsaPubKeyHashLenErr, err)
+	} else if n != uint8Len {
+		return errors.Errorf(
+			readRsaPubKeyHashLenNumBytesErr, uint8Len, n)
 	}
 
 	// RsaPubKeyHash
-	c.RsaPubKeyHash = make([]byte, binary.LittleEndian.Uint64(b))
-	_, err = buff.Read(c.RsaPubKeyHash)
+	rsaPubKeyHashLen := int(binary.LittleEndian.Uint64(b))
+	c.RsaPubKeyHash = make([]byte, rsaPubKeyHashLen)
+	n, err = buff.Read(c.RsaPubKeyHash)
 	if err != nil {
 		return errors.Errorf(readRsaPubKeyHashErr, err)
+	} else if n != rsaPubKeyHashLen {
+		return errors.Errorf(readRsaPubKeyHashNumBytesErr, rsaPubKeyHashLen, n)
 	}
 
 	// RsaPubKeyLength
-	b = make([]byte, 8)
-	_, err = buff.Read(b)
+	b = make([]byte, uint8Len)
+	n, err = buff.Read(b)
 	if err != nil {
 		return errors.Errorf(readRsaPubKeyLenErr, err)
+	} else if n != uint8Len {
+		return errors.Errorf(readRsaPubKeyLenNumBytesErr, uint8Len, n)
 	}
 	c.RsaPubKeyLength = int(binary.LittleEndian.Uint64(b))
 
 	// RSASubPayloads
-	b = make([]byte, 8)
-	_, err = buff.Read(b)
+	b = make([]byte, uint8Len)
+	n, err = buff.Read(b)
 	if err != nil {
 		return errors.Errorf(readRSASubPayloadsErr, err)
+	} else if n != uint8Len {
+		return errors.Errorf(readRSASubPayloadsNumBytesErr, uint8Len, n)
 	}
 	c.RSASubPayloads = int(binary.LittleEndian.Uint64(b))
 
 	// Secret
 	c.Secret = make([]byte, secretSize)
-	_, err = buff.Read(c.Secret)
+	n, err = buff.Read(c.Secret)
 	if err != nil {
 		return errors.Errorf(readSecretErr, err)
+	} else if n != secretSize {
+		return errors.Errorf(readSecretNumBytesErr, secretSize, n)
 	}
 
 	return nil
+}
+
+// generatePhrasePassword generates a random English phrase to use as a
+// password.
+func generatePhrasePassword(numWords int, csprng io.Reader) (string, error) {
+	g, err := diceware.NewGenerator(
+		&diceware.GeneratorInput{RandReader: csprng})
+	if err != nil {
+		return "", err
+	}
+
+	words, err := g.Generate(numWords)
+	if err != nil {
+		return "", err
+	}
+
+	return strings.Join(words, " "), nil
 }
 
 // encryptShareURL encrypts the data for a shared URL using XChaCha20-Poly1305.
