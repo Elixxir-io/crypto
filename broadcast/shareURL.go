@@ -145,10 +145,10 @@ func (c *Channel) ShareURL(url string, maxUses int, csprng io.Reader) (string, s
 
 // DecodeShareURL decodes the given URL to a Channel. If the channel is Private
 // or Secret, then a password is required. Otherwise, an error is returned.
-func DecodeShareURL(address, password string) (*Channel, int, error) {
+func DecodeShareURL(address, password string) (*Channel, error) {
 	u, err := goUrl.Parse(address)
 	if err != nil {
-		return nil, 0, errors.Errorf(parseShareUrlErr, err)
+		return nil, errors.Errorf(parseShareUrlErr, err)
 	}
 
 	q := u.Query()
@@ -156,23 +156,23 @@ func DecodeShareURL(address, password string) (*Channel, int, error) {
 	// Check the version
 	versionString := q.Get(versionKey)
 	if versionString == "" {
-		return nil, 0, errors.New(urlVersionErr)
+		return nil, errors.New(urlVersionErr)
 	}
 	v, err := strconv.Atoi(versionString)
 	if err != nil {
-		return nil, 0, errors.Errorf(parseVersionErr, err)
+		return nil, errors.Errorf(parseVersionErr, err)
 	} else if v != shareUrlVersion {
-		return nil, 0, errors.Errorf(versionErr, shareUrlVersion, v)
+		return nil, errors.Errorf(versionErr, shareUrlVersion, v)
 	}
 
 	// Get the max uses
 	maxUsesString := q.Get(maxUsesKey)
 	if versionString == "" {
-		return nil, 0, errors.New(noMaxUsesErr)
+		return nil, errors.New(noMaxUsesErr)
 	}
 	maxUsesFromURL, err := strconv.Atoi(maxUsesString)
 	if err != nil {
-		return nil, 0, errors.Errorf(parseMaxVersionErr, err)
+		return nil, errors.Errorf(parseMaxVersionErr, err)
 	}
 
 	c := &Channel{}
@@ -184,31 +184,31 @@ func DecodeShareURL(address, password string) (*Channel, int, error) {
 	case q.Has(saltKey):
 		err = c.decodePublicShareURL(q)
 		if err != nil {
-			return nil, 0, errors.Errorf(decodePublicUrlErr, err)
+			return nil, errors.Errorf(decodePublicUrlErr, err)
 		}
 	case q.Has(nameKey):
 		if password == "" {
-			return nil, 0, errors.New(noPasswordErr)
+			return nil, errors.New(noPasswordErr)
 		}
 		maxUses, err = c.decodePrivateShareURL(q, password)
 		if err != nil {
-			return nil, 0, errors.Errorf(decodePrivateUrlErr, err)
+			return nil, errors.Errorf(decodePrivateUrlErr, err)
 		}
 	case q.Has(dataKey):
 		if password == "" {
-			return nil, 0, errors.New(noPasswordErr)
+			return nil, errors.New(noPasswordErr)
 		}
 		maxUses, err = c.decodeSecretShareURL(q, password)
 		if err != nil {
-			return nil, 0, errors.Errorf(decodeSecretUrlErr, err)
+			return nil, errors.Errorf(decodeSecretUrlErr, err)
 		}
 	default:
-		return nil, 0, errors.New(malformedUrlErr)
+		return nil, errors.New(malformedUrlErr)
 	}
 
 	if c.level == Private || c.level == Secret {
 		if maxUses != maxUsesFromURL {
-			return nil, 0, errors.New(maxUsesUrlErr)
+			return nil, errors.New(maxUsesUrlErr)
 		}
 	}
 
@@ -216,10 +216,10 @@ func DecodeShareURL(address, password string) (*Channel, int, error) {
 	c.ReceptionID, err = NewChannelID(c.Name, c.Description, c.level, c.Salt,
 		c.RsaPubKeyHash, HashSecret(c.Secret))
 	if err != nil {
-		return nil, 0, errors.Errorf(newReceptionIdErr, err)
+		return nil, errors.Errorf(newReceptionIdErr, err)
 	}
 
-	return c, maxUsesFromURL, nil
+	return c, nil
 }
 
 // GetShareUrlType determines the PrivacyLevel of the channel's URL.

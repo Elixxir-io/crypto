@@ -34,14 +34,9 @@ func TestChannel_ShareURL_DecodeShareURL(t *testing.T) {
 			t.Fatalf("Failed to create %s URL: %+v", level, err)
 		}
 
-		newChannel, maxUses, err := DecodeShareURL(address, password)
+		newChannel, err := DecodeShareURL(address, password)
 		if err != nil {
 			t.Errorf("Failed to decode %s URL: %+v", level, err)
-		}
-
-		if i != maxUses {
-			t.Errorf("Did not get expected max uses."+
-				"\nexpected: %d\nreceived: %d", i, maxUses)
 		}
 
 		if !reflect.DeepEqual(*c, *newChannel) {
@@ -74,7 +69,7 @@ func TestDecodeShareURL_ParseError(t *testing.T) {
 	host := "invalidHost\x7f"
 	expectedErr := strings.Split(parseShareUrlErr, "%")[0]
 
-	_, _, err := DecodeShareURL(host, "")
+	_, err := DecodeShareURL(host, "")
 	if err == nil || !strings.Contains(err.Error(), expectedErr) {
 		t.Errorf("Did not receive expected error for URL %q."+
 			"\nexpected: %s\nreceived: %+v", host, expectedErr, err)
@@ -97,7 +92,7 @@ func TestDecodeShareURL_NewChannelIDError(t *testing.T) {
 		"&m=0"
 	expectedErr := strings.Split(newReceptionIdErr, "%")[0]
 
-	_, _, err := DecodeShareURL(address, "")
+	_, err := DecodeShareURL(address, "")
 	if err == nil || !strings.Contains(err.Error(), expectedErr) {
 		t.Errorf("Did not receive expected error for URL %q."+
 			"\nexpected: %s\nreceived: %+v", address, expectedErr, err)
@@ -131,7 +126,7 @@ func TestDecodeShareURL_Error(t *testing.T) {
 	for i, tt := range tests {
 		expected := strings.Split(tt.err, "%")[0]
 
-		_, _, err := DecodeShareURL(tt.url, tt.password)
+		_, err := DecodeShareURL(tt.url, tt.password)
 		if err == nil || !strings.Contains(err.Error(), expected) {
 			t.Errorf("Did not receive expected error for URL %q (%d)."+
 				"\nexpected: %s\nreceived: %+v", tt.url, i, expected, err)
