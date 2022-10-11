@@ -9,8 +9,6 @@ package broadcast
 
 import (
 	"crypto/rand"
-	"encoding/binary"
-	"fmt"
 	"gitlab.com/xx_network/crypto/csprng"
 	"net/url"
 	"reflect"
@@ -24,21 +22,26 @@ func TestChannel_ShareURL_DecodeShareURL(t *testing.T) {
 	host := "https://internet.speakeasy.tech/"
 	rng := csprng.NewSystemRNG()
 
-	for _, level := range []PrivacyLevel{Public, Private, Secret} {
+	for i, level := range []PrivacyLevel{Public, Private, Secret} {
 		c, _, err := NewChannel("My Channel",
 			"Here is information about my channel.", level, 1000, rng)
 		if err != nil {
 			t.Fatalf("Failed to create new %s channel: %+v", level, err)
 		}
 
-		address, password, err := c.ShareURL(host, rng)
+		address, password, err := c.ShareURL(host, i, rng)
 		if err != nil {
 			t.Fatalf("Failed to create %s URL: %+v", level, err)
 		}
 
-		newChannel, err := DecodeShareURL(address, password)
+		newChannel, maxUses, err := DecodeShareURL(address, password)
 		if err != nil {
 			t.Errorf("Failed to decode %s URL: %+v", level, err)
+		}
+
+		if i != maxUses {
+			t.Errorf("Did not get expected max uses."+
+				"\nexpected: %d\nreceived: %d", i, maxUses)
 		}
 
 		if !reflect.DeepEqual(*c, *newChannel) {
@@ -59,7 +62,7 @@ func TestChannel_ShareURL_ParseError(t *testing.T) {
 	host := "invalidHost\x7f"
 	expectedErr := strings.Split(parseHostUrlErr, "%")[0]
 
-	_, _, err = c.ShareURL(host, rng)
+	_, _, err = c.ShareURL(host, 0, rng)
 	if err == nil || !strings.Contains(err.Error(), expectedErr) {
 		t.Errorf("Did not receive expected error for URL %q."+
 			"\nexpected: %s\nreceived: %+v", host, expectedErr, err)
@@ -71,7 +74,7 @@ func TestDecodeShareURL_ParseError(t *testing.T) {
 	host := "invalidHost\x7f"
 	expectedErr := strings.Split(parseShareUrlErr, "%")[0]
 
-	_, err := DecodeShareURL(host, "")
+	_, _, err := DecodeShareURL(host, "")
 	if err == nil || !strings.Contains(err.Error(), expectedErr) {
 		t.Errorf("Did not receive expected error for URL %q."+
 			"\nexpected: %s\nreceived: %+v", host, expectedErr, err)
@@ -90,10 +93,11 @@ func TestDecodeShareURL_NewChannelIDError(t *testing.T) {
 		"&l=493" +
 		"&p=1" +
 		"&s=8tJb%2FC9j26MJEfb%2F2463YQ%3D%3D" +
-		"&v=0"
+		"&v=0" +
+		"&m=0"
 	expectedErr := strings.Split(newReceptionIdErr, "%")[0]
 
-	_, err := DecodeShareURL(address, "")
+	_, _, err := DecodeShareURL(address, "")
 	if err == nil || !strings.Contains(err.Error(), expectedErr) {
 		t.Errorf("Did not receive expected error for URL %q."+
 			"\nexpected: %s\nreceived: %+v", address, expectedErr, err)
@@ -109,25 +113,25 @@ func TestDecodeShareURL_Error(t *testing.T) {
 
 	tests := []test{
 		{"test?", "", urlVersionErr},
-		{"test?v=0", "", malformedUrlErr},
+		{"test?v=0&m=0", "", malformedUrlErr},
 		{"test?v=q", "", parseVersionErr},
 		{"test?v=2", "", versionErr},
-		{"test?v=0&s=AA==", "", parseLevelErr},
-		{"test?v=0&0Name=2", "", noPasswordErr},
-		{"test?v=0&d=2", "", noPasswordErr},
-		{"test?v=0&s=A&2Level=Public", "", parseSaltErr},
-		{"test?v=0&s=AA==&2Level=Public&k=A", "", parseRsaPubKeyHashErr},
-		{"test?v=0&s=AA==&2Level=Public&k=AA==&l=q", "", parseRsaPubKeyLengthErr},
-		{"test?v=0&s=AA==&2Level=Public&k=AA==&l=5&p=t", "", parseRsaSubPayloadsErr},
-		{"test?v=0&s=AA==&2Level=Public&k=AA==&l=5&p=1&e=A", "", parseSecretErr},
-		{"test?v=0&0Name=2", "hello", decryptErr},
-		{"test?v=0&d=2", "hello", decodeEncryptedErr},
+		{"test?v=0&s=AA==&m=0", "", parseLevelErr},
+		{"test?v=0&0Name=2&m=0", "", noPasswordErr},
+		{"test?v=0&d=2&m=0", "", noPasswordErr},
+		{"test?v=0&s=A&2Level=Public&m=0", "", parseSaltErr},
+		{"test?v=0&s=AA==&2Level=Public&k=A&m=0", "", parseRsaPubKeyHashErr},
+		{"test?v=0&s=AA==&2Level=Public&k=AA==&l=q&m=0", "", parseRsaPubKeyLengthErr},
+		{"test?v=0&s=AA==&2Level=Public&k=AA==&l=5&p=t&m=0", "", parseRsaSubPayloadsErr},
+		{"test?v=0&s=AA==&2Level=Public&k=AA==&l=5&p=1&e=A&m=0", "", parseSecretErr},
+		{"test?v=0&0Name=2&m=0", "hello", decryptErr},
+		{"test?v=0&d=2&m=0", "hello", decodeEncryptedErr},
 	}
 
 	for i, tt := range tests {
 		expected := strings.Split(tt.err, "%")[0]
 
-		_, err := DecodeShareURL(tt.url, tt.password)
+		_, _, err := DecodeShareURL(tt.url, tt.password)
 		if err == nil || !strings.Contains(err.Error(), expected) {
 			t.Errorf("Did not receive expected error for URL %q (%d)."+
 				"\nexpected: %s\nreceived: %+v", tt.url, i, expected, err)
@@ -228,13 +232,19 @@ func TestChannel_encodePrivateShareURL_decodePrivateShareURL(t *testing.T) {
 	}
 
 	const password = "password"
+	maxUses := 12
 	urlValues := make(url.Values)
-	urlValues = c.encodePrivateShareURL(urlValues, password, rng)
+	urlValues = c.encodePrivateShareURL(urlValues, password, maxUses, rng)
 
 	var newChannel Channel
-	err = newChannel.decodePrivateShareURL(urlValues, password)
+	loadedMaxUses, err := newChannel.decodePrivateShareURL(urlValues, password)
 	if err != nil {
 		t.Errorf("Error decoding URL values: %+v", err)
+	}
+
+	if maxUses != loadedMaxUses {
+		t.Errorf("Did not get expected max uses.\nexpected: %d\nreceived: %d",
+			maxUses, loadedMaxUses)
 	}
 
 	// Reception ID is set at the layer above
@@ -257,13 +267,19 @@ func TestChannel_encodeSecretShareURL_decodeSecretShareURL(t *testing.T) {
 	}
 
 	const password = "password"
+	maxUses := 2
 	urlValues := make(url.Values)
-	urlValues = c.encodeSecretShareURL(urlValues, password, rng)
+	urlValues = c.encodeSecretShareURL(urlValues, password, maxUses, rng)
 
 	var newChannel Channel
-	err = newChannel.decodeSecretShareURL(urlValues, password)
+	loadedMaxUses, err := newChannel.decodeSecretShareURL(urlValues, password)
 	if err != nil {
 		t.Errorf("Error decoding URL values: %+v", err)
+	}
+
+	if maxUses != loadedMaxUses {
+		t.Errorf("Did not get expected max uses.\nexpected: %d\nreceived: %d",
+			maxUses, loadedMaxUses)
 	}
 
 	// Reception ID is set at the layer above
@@ -286,12 +302,18 @@ func TestChannel_marshalPrivateShareUrlSecrets_unmarshalPrivateShareUrlSecrets(t
 		t.Fatalf("Failed to create new channel: %+v", err)
 	}
 
-	data := c.marshalPrivateShareUrlSecrets()
+	maxUses := 5
+	data := c.marshalPrivateShareUrlSecrets(maxUses)
 
 	var newChannel Channel
-	err = newChannel.unmarshalPrivateShareUrlSecrets(data)
+	unmarshalledMaxUses, err := newChannel.unmarshalPrivateShareUrlSecrets(data)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal private channel data: %+v", err)
+	}
+
+	if maxUses != unmarshalledMaxUses {
+		t.Errorf("Unmarshalled max uses does not match expected."+
+			"\nexpected: %d\nreceived: %d", maxUses, unmarshalledMaxUses)
 	}
 
 	// Name, description, and reception ID are set at the layer above
@@ -305,54 +327,6 @@ func TestChannel_marshalPrivateShareUrlSecrets_unmarshalPrivateShareUrlSecrets(t
 	}
 }
 
-// Tests that channel.unmarshalPrivateShareUrlSecrets returns errors for a list
-// of invalid URLs.
-func TestChannel_unmarshalPrivateShareUrlSecrets_Errors(t *testing.T) {
-	type test struct {
-		data []byte
-		err  string
-	}
-
-	rsaPubKeyHashLen := 10
-	data := make([]byte, 1+saltSize+uint8Len)
-	binary.LittleEndian.PutUint64(
-		data[1+saltSize:1+saltSize+uint8Len],
-		uint64(rsaPubKeyHashLen))
-
-	tests := []test{
-		{[]byte{}, readPrivacyLevelErr},
-		{[]byte{1}, readSaltErr},
-		{[]byte{1, 2},
-			fmt.Sprintf(readSaltNumBytesErr, saltSize, 1)},
-		{make([]byte, 1+saltSize), readRsaPubKeyHashLenErr},
-		{make([]byte, 1+saltSize+2),
-			fmt.Sprintf(readRsaPubKeyHashLenNumBytesErr, uint8Len, 2)},
-		{data, readRsaPubKeyHashErr},
-		{append(data, []byte{1}...),
-			fmt.Sprintf(readRsaPubKeyHashNumBytesErr, rsaPubKeyHashLen, 1)},
-		{append(data, make([]byte, rsaPubKeyHashLen)...), readRsaPubKeyLenErr},
-		{append(data, make([]byte, rsaPubKeyHashLen+1)...),
-			fmt.Sprintf(readRsaPubKeyLenNumBytesErr, uint8Len, 1)},
-		{append(data, make([]byte, rsaPubKeyHashLen+uint8Len)...), readRSASubPayloadsErr},
-		{append(data, make([]byte, rsaPubKeyHashLen+uint8Len+1)...),
-			fmt.Sprintf(readRSASubPayloadsNumBytesErr, uint8Len, 1)},
-		{append(data, make([]byte, rsaPubKeyHashLen+uint8Len+uint8Len)...), readSecretErr},
-		{append(data, make([]byte, rsaPubKeyHashLen+uint8Len+secretSize+1)...),
-			fmt.Sprintf(readSecretNumBytesErr, secretSize, 25)},
-	}
-
-	for i, tt := range tests {
-		expected := strings.Split(tt.err, "%")[0]
-
-		c := &Channel{}
-		err := c.unmarshalPrivateShareUrlSecrets(tt.data)
-		if err == nil || !strings.Contains(err.Error(), expected) {
-			t.Errorf("Did not receive expected error test %d."+
-				"\nexpected: %s\nreceived: %+v", i, expected, err)
-		}
-	}
-}
-
 // Tests that a channel marshalled with Channel.marshalSecretShareUrlSecrets and
 // unmarshalled with Channel.unmarshalSecretShareUrlSecrets matches the
 // original, except for the ReceptionID, which is added in the layer above.
@@ -363,12 +337,18 @@ func TestChannel_marshalSecretShareUrlSecrets_unmarshalSecretShareUrlSecrets(t *
 		t.Fatalf("Failed to create new channel: %+v", err)
 	}
 
-	data := c.marshalSecretShareUrlSecrets()
+	maxUses := 5
+	data := c.marshalSecretShareUrlSecrets(maxUses)
 
 	var newChannel Channel
-	err = newChannel.unmarshalSecretShareUrlSecrets(data)
+	unmarshalledMaxUses, err := newChannel.unmarshalSecretShareUrlSecrets(data)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal secret channel data: %+v", err)
+	}
+
+	if maxUses != unmarshalledMaxUses {
+		t.Errorf("Unmarshalled max uses does not match expected."+
+			"\nexpected: %d\nreceived: %d", maxUses, unmarshalledMaxUses)
 	}
 
 	// Reception ID is set at the layer above
@@ -377,69 +357,6 @@ func TestChannel_marshalSecretShareUrlSecrets_unmarshalSecretShareUrlSecrets(t *
 	if !reflect.DeepEqual(*c, newChannel) {
 		t.Errorf("Unmarshalled channel does not match original."+
 			"\nexpected: %+v\nreceived: %+v", *c, newChannel)
-	}
-}
-
-// Tests that channel.unmarshalSecretShareUrlSecrets returns errors for a list
-// of invalid URLs.
-func TestChannel_unmarshalSecretShareUrlSecrets_Errors(t *testing.T) {
-	type test struct {
-		data []byte
-		err  string
-	}
-
-	nameDescData := []byte{1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1}
-	rsaPubKeyHashLen := 10
-	data := append(nameDescData, make([]byte, saltSize+uint8Len)...)
-	binary.LittleEndian.PutUint64(
-		data[len(nameDescData)+saltSize:len(nameDescData)+saltSize+uint8Len],
-		uint64(rsaPubKeyHashLen))
-
-	tests := []test{
-		{[]byte{}, readPrivacyLevelErr},
-		{[]byte{1}, readNameLenErr},
-		{[]byte{1, 1},
-			fmt.Sprintf(readNameLenNumBytesErr, uint8Len, 1)},
-		{[]byte{1, 1, 0, 0, 0, 0, 0, 0, 0}, readNameErr},
-		{[]byte{1, 2, 0, 0, 0, 0, 0, 0, 0, 1},
-			fmt.Sprintf(readNameNumBytesErr, 2, 1)},
-		{[]byte{1, 1, 0, 0, 0, 0, 0, 0, 0, 1}, readDescLenErr},
-		{[]byte{1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 2},
-			fmt.Sprintf(readDescLenNumBytesErr, uint8Len, 1)},
-		{[]byte{1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0},
-			readDescErr},
-		{[]byte{1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 1},
-			fmt.Sprintf(readDescNumBytesErr, 2, 1)},
-
-		{nameDescData, readSaltErr},
-		{append(nameDescData, []byte{1, 2}...),
-			fmt.Sprintf(readSaltNumBytesErr, saltSize, 2)},
-		{append(nameDescData, make([]byte, saltSize)...), readRsaPubKeyHashLenErr},
-		{append(nameDescData, make([]byte, saltSize+2)...),
-			fmt.Sprintf(readRsaPubKeyHashLenNumBytesErr, uint8Len, 2)},
-		{data, readRsaPubKeyHashErr},
-		{append(data, []byte{1}...),
-			fmt.Sprintf(readRsaPubKeyHashNumBytesErr, rsaPubKeyHashLen, 1)},
-		{append(data, make([]byte, rsaPubKeyHashLen)...), readRsaPubKeyLenErr},
-		{append(data, make([]byte, rsaPubKeyHashLen+1)...),
-			fmt.Sprintf(readRsaPubKeyLenNumBytesErr, uint8Len, 1)},
-		{append(data, make([]byte, rsaPubKeyHashLen+uint8Len)...), readRSASubPayloadsErr},
-		{append(data, make([]byte, rsaPubKeyHashLen+uint8Len+1)...),
-			fmt.Sprintf(readRSASubPayloadsNumBytesErr, uint8Len, 1)},
-		{append(data, make([]byte, rsaPubKeyHashLen+uint8Len+uint8Len)...), readSecretErr},
-		{append(data, make([]byte, rsaPubKeyHashLen+uint8Len+secretSize+1)...),
-			fmt.Sprintf(readSecretNumBytesErr, secretSize, 25)},
-	}
-
-	for i, tt := range tests {
-		expected := strings.Split(tt.err, "%")[0]
-
-		c := &Channel{}
-		err := c.unmarshalSecretShareUrlSecrets(tt.data)
-		if err == nil || !strings.Contains(err.Error(), expected) {
-			t.Errorf("Did not receive expected error test %d."+
-				"\nexpected: %s\nreceived: %+v", i, expected, err)
-		}
 	}
 }
 
