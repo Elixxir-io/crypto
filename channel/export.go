@@ -26,15 +26,14 @@ const (
 	// ImportPrivateIdentity
 	noDataErr         = "len of data is 0"
 	noHeadFootTagsErr = "invalid format: %+v"
-	noVersionErr      = "version not found: %+v"
+	noVersionTagErr   = "version tags not found: %+v"
+	noVersionErr      = "version not found"
 	noEncryptedData   = "no encrypted data found"
-	wrongVersionErr   = "version must be %s or lower; received version %s"
+	wrongVersionErr   = "version must be %s or lower; received version %q"
 
-	// decodeVer0
-	base64DecodeErr    = "could not base 64 decode string: %+v"
-	unmarshalParamsErr = "could not unmarshal params: %+v"
-	decryptionErr      = "could not decrypt identity data: %+v"
-	decodeErr          = "could not decode decrypted identity data: %+v"
+	// decryptPrivateIdentity
+	decryptionErr = "could not decrypt identity data: %+v"
+	decodeErr     = "could not decode decrypted identity data: %+v"
 
 	// getTagContents
 	noOpenTagErr  = "missing opening tag"
@@ -87,6 +86,12 @@ var decodeVersions = map[string]func(password string, data []byte) (PrivateIdent
 	currentExportedVersion: decodeVer0,
 }
 
+// Export exports the PrivateIdentity into a portable encrypted string that can
+// be used to restore it later.
+func (i PrivateIdentity) Export(password string, csprng io.Reader) ([]byte, error) {
+	return i.export(password, backup.DefaultParams(), csprng)
+}
+
 // export encrypts and marshals the PrivateIdentity into a portable string.
 //  +----------------+---------------------+----------------------------------------------+--------+
 //  |     Header     | Encryption Metadata |                Encrypted Data                | Footer |
@@ -98,12 +103,12 @@ var decodeVersions = map[string]func(password string, data []byte) (PrivateIdent
 //  |     string     |                          base 64 encoded                           | string |
 //  +----------------+--------------------------------------------------------------------+--------+
 func (i PrivateIdentity) export(password string, params backup.Params,
-	csprng io.Reader) (string, error) {
+	csprng io.Reader) ([]byte, error) {
 
 	// Encrypt the PrivateIdentity with the user password
 	encryptedData, salt, err := i.encrypt(password, params, csprng)
 	if err != nil {
-		return "", errors.Errorf(encryptErr, err)
+		return nil, errors.Errorf(encryptErr, err)
 	}
 
 	// Add encryption metadata and encrypted data to buffer
@@ -114,7 +119,7 @@ func (i PrivateIdentity) export(password string, params backup.Params,
 	buff.Write(encryptedData)
 
 	// Add header tag, version number, and footer tag
-	encodedData := strings.Builder{}
+	encodedData := bytes.NewBuffer(nil)
 	encodedData.WriteString(headTag)
 	encodedData.WriteString(openVerTag)
 	encodedData.WriteString(currentExportedVersion)
@@ -122,9 +127,10 @@ func (i PrivateIdentity) export(password string, params backup.Params,
 	encodedData.WriteString(base64.StdEncoding.EncodeToString(buff.Bytes()))
 	encodedData.WriteString(footTag)
 
-	return encodedData.String(), nil
+	return encodedData.Bytes(), nil
 }
 
+// ImportPrivateIdentity generates a new PrivateIdentity from exported data.
 func ImportPrivateIdentity(password string, data []byte) (PrivateIdentity, error) {
 	var err error
 
@@ -142,7 +148,11 @@ func ImportPrivateIdentity(password string, data []byte) (PrivateIdentity, error
 	// Get the version number
 	version, err := getTagContents(data, openVerTag, closeVerTag)
 	if err != nil {
-		return PrivateIdentity{}, errors.Errorf(noVersionErr, err)
+		return PrivateIdentity{}, errors.Errorf(noVersionTagErr, err)
+	}
+
+	if len(version) == 0 {
+		return PrivateIdentity{}, errors.New(noVersionErr)
 	}
 
 	// Strip version number from the data
@@ -161,52 +171,6 @@ func ImportPrivateIdentity(password string, data []byte) (PrivateIdentity, error
 
 	return PrivateIdentity{},
 		errors.Errorf(wrongVersionErr, currentExportedVersion, version)
-}
-
-// decodeVer0 decodes the PrivateIdentity encoded data. This function is for
-// version "1" of the structure, defined below.
-// +---------------------+----------------------------------------------+
-// | Encryption Metadata |                Encrypted Data                |
-// +----------+----------+---------+---------+-------------+------------+
-// |   Salt   |  Argon   | Version | Codeset |   ed25519   |  ed25519   |
-// |          |  params  |         | Version | Private Key | Public Key |
-// | 16 bytes | 9 bytes  | 1 byte  | 1 byte  |   64 bytes  |  32 bytes  |
-// +----------+----------+---------+---------+-------------+------------+
-// |                          base 64 encoded                           |
-// +--------------------------------------------------------------------+
-func decodeVer0(password string, data []byte) (PrivateIdentity, error) {
-	// Create a new buffer from a base64 decoder so that the data can be read
-	// and decoded at the same time.
-	decoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader(data))
-	var buff bytes.Buffer
-	_, err := buff.ReadFrom(decoder)
-	if err != nil {
-		return PrivateIdentity{}, errors.Errorf(base64DecodeErr, err)
-	}
-
-	// Get salt
-	salt := buff.Next(saltLen)
-
-	// Get and unmarshal Argon2 parameters
-	var params backup.Params
-	err = params.Unmarshal(buff.Next(backup.ParamsLen))
-	if err != nil {
-		return PrivateIdentity{}, errors.Errorf(unmarshalParamsErr, err)
-	}
-
-	// Derive decryption key and decrypt the data
-	key := deriveKey(password, salt, params)
-	decryptedData, err := decryptIdentity(buff.Bytes(), key)
-	if err != nil {
-		return PrivateIdentity{}, errors.Errorf(decryptionErr, err)
-	}
-
-	pi, err := decodePrivateIdentity(decryptedData)
-	if err != nil {
-		return PrivateIdentity{}, errors.Errorf(decodeErr, err)
-	}
-
-	return pi, nil
 }
 
 // encrypt generates a salt and encrypts the PrivateIdentity with the user's
@@ -229,6 +193,26 @@ func (i PrivateIdentity) encrypt(password string, params backup.Params,
 	encryptedData = encryptIdentity(data, key, csprng)
 
 	return encryptedData, salt, nil
+}
+
+// decryptPrivateIdentity
+func decryptPrivateIdentity(password string, data, salt []byte,
+	params backup.Params) (PrivateIdentity, error) {
+	// Derive decryption key
+	key := deriveKey(password, salt, params)
+
+	// Decrypt the data
+	decryptedData, err := decryptIdentity(data, key)
+	if err != nil {
+		return PrivateIdentity{}, errors.Errorf(decryptionErr, err)
+	}
+
+	pi, err := decodePrivateIdentity(decryptedData)
+	if err != nil {
+		return PrivateIdentity{}, errors.Errorf(decodeErr, err)
+	}
+
+	return pi, nil
 }
 
 // encode marshals the public key, private key, and codeset along with a version
