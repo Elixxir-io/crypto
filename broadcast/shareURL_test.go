@@ -8,10 +8,13 @@
 package broadcast
 
 import (
+	"bytes"
 	"crypto/rand"
+	"fmt"
 	"gitlab.com/xx_network/crypto/csprng"
-	"net/url"
+	goUrl "net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -29,12 +32,12 @@ func TestChannel_ShareURL_DecodeShareURL(t *testing.T) {
 			t.Fatalf("Failed to create new %s channel: %+v", level, err)
 		}
 
-		address, password, err := c.ShareURL(host, i, rng)
+		url, password, err := c.ShareURL(host, i, rng)
 		if err != nil {
 			t.Fatalf("Failed to create %s URL: %+v", level, err)
 		}
 
-		newChannel, err := DecodeShareURL(address, password)
+		newChannel, err := DecodeShareURL(url, password)
 		if err != nil {
 			t.Errorf("Failed to decode %s URL: %+v", level, err)
 		}
@@ -46,7 +49,7 @@ func TestChannel_ShareURL_DecodeShareURL(t *testing.T) {
 	}
 }
 
-// Tests that Channel.ShareURL returns an error for an invalid host.
+// Error path: Tests that Channel.ShareURL returns an error for an invalid host.
 func TestChannel_ShareURL_ParseError(t *testing.T) {
 	rng := csprng.NewSystemRNG()
 	c, _, err := NewChannel("A", "B", Public, 1000, rng)
@@ -64,7 +67,25 @@ func TestChannel_ShareURL_ParseError(t *testing.T) {
 	}
 }
 
-// Tests that DecodeShareURL returns an error for an invalid host.
+// Error path: Tests that Channel.ShareURL returns an error when generating a
+// password fails due to an empty RNG.
+func TestChannel_ShareURL_PasswordRngError(t *testing.T) {
+	c, _, err := NewChannel("A", "B", Secret, 1000, csprng.NewSystemRNG())
+	if err != nil {
+		t.Fatalf("Failed to create new channel: %+v", err)
+	}
+
+	expectedErr := strings.Split(generatePhrasePasswordErr, "%")[0]
+
+	badRng := bytes.NewBuffer(nil)
+	_, _, err = c.ShareURL("host", 0, badRng)
+	if err == nil || !strings.Contains(err.Error(), expectedErr) {
+		t.Errorf("Did not receive expected error for bad RNG."+
+			"\nexpected: %s\nreceived: %+v", expectedErr, err)
+	}
+}
+
+// Error path: Tests that DecodeShareURL returns an error for an invalid host.
 func TestDecodeShareURL_ParseError(t *testing.T) {
 	host := "invalidHost\x7f"
 	expectedErr := strings.Split(parseShareUrlErr, "%")[0]
@@ -76,41 +97,20 @@ func TestDecodeShareURL_ParseError(t *testing.T) {
 	}
 }
 
-// Tests that DecodeShareURL returns an error when NewChannelID returns an error
-// due to the salt size being incorrect.
-func TestDecodeShareURL_NewChannelIDError(t *testing.T) {
-	address := "https://internet.speakeasy.tech/" +
-		"?0Name=My+Channel" +
-		"&1Description=Here+is+information+about+my+channel." +
-		"&2Level=Public" +
-		"&e=z73XYenRG65WHmJh8r%2BanZ71r2rPOHjTgCSEh05TUlQ%3D" +
-		"&k=9b1UtGnZ%2B%2FM3hnXTfNRN%2BZKXcsHyZE00vZ9We0oDP90%3D" +
-		"&l=493" +
-		"&p=1" +
-		"&s=8tJb%2FC9j26MJEfb%2F2463YQ%3D%3D" +
-		"&v=0" +
-		"&m=0"
-	expectedErr := strings.Split(newReceptionIdErr, "%")[0]
-
-	_, err := DecodeShareURL(address, "")
-	if err == nil || !strings.Contains(err.Error(), expectedErr) {
-		t.Errorf("Did not receive expected error for URL %q."+
-			"\nexpected: %s\nreceived: %+v", address, expectedErr, err)
-	}
-
-}
-
-// Tests that DecodeShareURL returns errors for a list of invalid URLs.
-func TestDecodeShareURL_Error(t *testing.T) {
+// Error path: Tests that DecodeShareURL returns errors for a list of invalid
+// URLs.
+func TestDecodeShareURL_DecodeError(t *testing.T) {
 	type test struct {
 		url, password, err string
 	}
 
 	tests := []test{
 		{"test?", "", urlVersionErr},
-		{"test?v=0&m=0", "", malformedUrlErr},
 		{"test?v=q", "", parseVersionErr},
 		{"test?v=2", "", versionErr},
+		{"test?v=0", "", noMaxUsesErr},
+		{"test?v=0&m=t", "", parseMaxUsesErr},
+		{"test?v=0&m=0", "", malformedUrlErr},
 		{"test?v=0&s=AA==&m=0", "", parseLevelErr},
 		{"test?v=0&0Name=2&m=0", "", noPasswordErr},
 		{"test?v=0&d=2&m=0", "", noPasswordErr},
@@ -131,6 +131,59 @@ func TestDecodeShareURL_Error(t *testing.T) {
 			t.Errorf("Did not receive expected error for URL %q (%d)."+
 				"\nexpected: %s\nreceived: %+v", tt.url, i, expected, err)
 		}
+	}
+}
+
+// Error path: Tests that DecodeShareURL returns the expected error when the max
+// uses in the URL does not match the max uses in the encrypted secret data.
+func TestChannel_DecodeShareURL_MaxUsesMismatchError(t *testing.T) {
+	host := "https://internet.speakeasy.tech/"
+	rng := csprng.NewSystemRNG()
+	c, _, err := NewChannel("A", "B", Secret, 1000, rng)
+	if err != nil {
+		t.Fatalf("Failed to create new channel: %+v", err)
+	}
+
+	oldMaxUses := 5
+	url, password, err := c.ShareURL(host, oldMaxUses, rng)
+	if err != nil {
+		t.Fatalf("Failed to create URL: %+v", err)
+	}
+
+	// Change max uses in URL
+	newMaxUses := 6
+	url = strings.ReplaceAll(url,
+		"&"+MaxUsesKey+"="+strconv.Itoa(oldMaxUses),
+		"&"+MaxUsesKey+"="+strconv.Itoa(newMaxUses))
+
+	expectedErr := fmt.Sprintf(maxUsesUrlErr, newMaxUses, oldMaxUses)
+	_, err = DecodeShareURL(url, password)
+	if err == nil || err.Error() != expectedErr {
+		t.Errorf("Did not receive expected error when max uses was changed."+
+			"\nexpected: %s\nreceived: %+v", expectedErr, err)
+	}
+}
+
+// Tests that DecodeShareURL returns an error when NewChannelID returns an error
+// due to the salt size being incorrect.
+func TestDecodeShareURL_NewChannelIDError(t *testing.T) {
+	url := "https://internet.speakeasy.tech/" +
+		"?0Name=My+Channel" +
+		"&1Description=Here+is+information+about+my+channel." +
+		"&2Level=Public" +
+		"&e=z73XYenRG65WHmJh8r%2BanZ71r2rPOHjTgCSEh05TUlQ%3D" +
+		"&k=9b1UtGnZ%2B%2FM3hnXTfNRN%2BZKXcsHyZE00vZ9We0oDP90%3D" +
+		"&l=493" +
+		"&p=1" +
+		"&s=8tJb%2FC9j26MJEfb%2F2463YQ%3D%3D" +
+		"&v=0" +
+		"&m=0"
+	expectedErr := strings.Split(newReceptionIdErr, "%")[0]
+
+	_, err := DecodeShareURL(url, "")
+	if err == nil || !strings.Contains(err.Error(), expectedErr) {
+		t.Errorf("Did not receive expected error for URL %q."+
+			"\nexpected: %s\nreceived: %+v", url, expectedErr, err)
 	}
 }
 
@@ -156,7 +209,7 @@ func TestGetShareUrlType(t *testing.T) {
 	}
 }
 
-// Tests that GetShareUrlType returns an error for an invalid host.
+// Error path: Tests that GetShareUrlType returns an error for an invalid host.
 func TestGetShareUrlType_ParseError(t *testing.T) {
 	host := "invalidHost\x7f"
 	c, err := GetShareUrlType(host)
@@ -165,7 +218,8 @@ func TestGetShareUrlType_ParseError(t *testing.T) {
 	}
 }
 
-// Tests that GetShareUrlType returns errors for a list of invalid URLs.
+// Error path: Tests that GetShareUrlType returns errors for a list of invalid
+// URLs.
 func TestGetShareUrlType_Error(t *testing.T) {
 	type test struct {
 		url, password, err string
@@ -198,7 +252,7 @@ func TestChannel_encodePublicShareURL_decodePublicShareURL(t *testing.T) {
 		t.Fatalf("Failed to create new channel: %+v", err)
 	}
 
-	urlValues := make(url.Values)
+	urlValues := make(goUrl.Values)
 	urlValues = c.encodePublicShareURL(urlValues)
 
 	var newChannel Channel
@@ -228,7 +282,7 @@ func TestChannel_encodePrivateShareURL_decodePrivateShareURL(t *testing.T) {
 
 	const password = "password"
 	maxUses := 12
-	urlValues := make(url.Values)
+	urlValues := make(goUrl.Values)
 	urlValues = c.encodePrivateShareURL(urlValues, password, maxUses, rng)
 
 	var newChannel Channel
@@ -251,6 +305,21 @@ func TestChannel_encodePrivateShareURL_decodePrivateShareURL(t *testing.T) {
 	}
 }
 
+// Error path: Tests Channel.decodePrivateShareURL returns the expected error
+// when decoding the data fails.
+func TestChannel_decodePrivateShareURL(t *testing.T) {
+	urlValues := make(goUrl.Values)
+	urlValues.Set(dataKey, "invalid data")
+
+	var newChannel Channel
+	expectedErr := strings.Split(decodeEncryptedErr, "%")[0]
+	_, err := newChannel.decodePrivateShareURL(urlValues, "")
+	if err == nil || !strings.Contains(err.Error(), expectedErr) {
+		t.Errorf("Did not receive expected error when the data is invalid."+
+			"\nexpected: %s\nreceived: %+v", expectedErr, err)
+	}
+}
+
 // Tests that a channel can be encoded to a URL using
 // Channel.encodeSecretShareURL and decoded to a new channel using
 // Channel.decodeSecretShareURL and that it matches the original.
@@ -263,7 +332,7 @@ func TestChannel_encodeSecretShareURL_decodeSecretShareURL(t *testing.T) {
 
 	const password = "password"
 	maxUses := 2
-	urlValues := make(url.Values)
+	urlValues := make(goUrl.Values)
 	urlValues = c.encodeSecretShareURL(urlValues, password, maxUses, rng)
 
 	var newChannel Channel

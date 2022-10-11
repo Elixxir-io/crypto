@@ -38,7 +38,10 @@ const (
 	rsaSubPayloadsKey  = "p"
 	secretKey          = "e"
 	dataKey            = "d"
-	maxUsesKey         = "m"
+
+	// MaxUsesKey is the key used to save max uses in a URL. The value is
+	// expected to be a positive integer.
+	MaxUsesKey = "m"
 )
 
 // Data lengths.
@@ -67,14 +70,14 @@ const (
 	urlVersionErr       = "no version found"
 	parseVersionErr     = "failed to parse version: %+v"
 	noMaxUsesErr        = "no max uses found"
-	parseMaxVersionErr  = "failed to parse max version: %+v"
+	parseMaxUsesErr     = "failed to parse max version: %+v"
 	versionErr          = "version mismatch: require v%d, found v%d"
 	decodePublicUrlErr  = "could not decode public share URL: %+v"
 	decodePrivateUrlErr = "could not decode private share URL: %+v"
 	decodeSecretUrlErr  = "could not decode secret share URL: %+v"
 	noPasswordErr       = "no password specified"
 	malformedUrlErr     = "URL is missing required data"
-	maxUsesUrlErr       = "max uses is incorrectly set in the URL"
+	maxUsesUrlErr       = "max uses in URL %d does not match expected %d"
 	newReceptionIdErr   = "could not create new channel ID: %+v"
 
 	// Channel.decodePublicShareURL
@@ -109,6 +112,13 @@ const (
 // last with the lowest level revealing everything and the highest level
 // revealing nothing. For any level above the lowest, a password is returned,
 // which will be required when decoding the URL.
+//
+// The maxUses is the maximum number of times this URL can be used to join a
+// channel. If it is set to 0, then it can be shared unlimited times. The max
+// uses is set as a URL parameter using the key [MaxUsesKey]. Note that this
+// number is also encoded in the secret data for private and secret URLs, so if
+// the number is changed in the URL, is will be verified when calling
+// [DecodeShareURL]. There is no enforcement for public URLs.
 func (c *Channel) ShareURL(url string, maxUses int, csprng io.Reader) (string, string, error) {
 	u, err := goUrl.Parse(url)
 	if err != nil {
@@ -126,7 +136,7 @@ func (c *Channel) ShareURL(url string, maxUses int, csprng io.Reader) (string, s
 
 	q := u.Query()
 	q.Set(versionKey, strconv.Itoa(shareUrlVersion))
-	q.Set(maxUsesKey, strconv.Itoa(maxUses))
+	q.Set(MaxUsesKey, strconv.Itoa(maxUses))
 
 	// Generate URL queries based on the privacy level
 	switch c.level {
@@ -145,8 +155,8 @@ func (c *Channel) ShareURL(url string, maxUses int, csprng io.Reader) (string, s
 
 // DecodeShareURL decodes the given URL to a Channel. If the channel is Private
 // or Secret, then a password is required. Otherwise, an error is returned.
-func DecodeShareURL(address, password string) (*Channel, error) {
-	u, err := goUrl.Parse(address)
+func DecodeShareURL(url, password string) (*Channel, error) {
+	u, err := goUrl.Parse(url)
 	if err != nil {
 		return nil, errors.Errorf(parseShareUrlErr, err)
 	}
@@ -166,13 +176,13 @@ func DecodeShareURL(address, password string) (*Channel, error) {
 	}
 
 	// Get the max uses
-	maxUsesString := q.Get(maxUsesKey)
-	if versionString == "" {
+	maxUsesString := q.Get(MaxUsesKey)
+	if maxUsesString == "" {
 		return nil, errors.New(noMaxUsesErr)
 	}
 	maxUsesFromURL, err := strconv.Atoi(maxUsesString)
 	if err != nil {
-		return nil, errors.Errorf(parseMaxVersionErr, err)
+		return nil, errors.Errorf(parseMaxUsesErr, err)
 	}
 
 	c := &Channel{}
@@ -208,7 +218,7 @@ func DecodeShareURL(address, password string) (*Channel, error) {
 
 	if c.level == Private || c.level == Secret {
 		if maxUses != maxUsesFromURL {
-			return nil, errors.New(maxUsesUrlErr)
+			return nil, errors.Errorf(maxUsesUrlErr, maxUsesFromURL, maxUses)
 		}
 	}
 
@@ -223,8 +233,8 @@ func DecodeShareURL(address, password string) (*Channel, error) {
 }
 
 // GetShareUrlType determines the PrivacyLevel of the channel's URL.
-func GetShareUrlType(address string) (PrivacyLevel, error) {
-	u, err := goUrl.Parse(address)
+func GetShareUrlType(url string) (PrivacyLevel, error) {
+	u, err := goUrl.Parse(url)
 	if err != nil {
 		return 0, errors.Errorf(parseShareUrlErr, err)
 	}
