@@ -222,12 +222,15 @@ func DecodeShareURL(url, password string) (*Channel, error) {
 		}
 	}
 
-	// Ensure that the name and description are of the correct length
-	if len([]rune(c.Name)) > NameMaxChars {
-		return nil, MaxNameCharLenErr
+	// Ensure that the name, description, and privacy level are valid
+	if err = VerifyName(c.Name); err != nil {
+		return nil, err
 	}
-	if len([]rune(c.Description)) > DescriptionMaxChars {
-		return nil, MaxDescriptionCharLenErr
+	if err := VerifyDescription(c.Description); err != nil {
+		return nil, err
+	}
+	if !c.level.Verify() {
+		return nil, errors.WithStack(InvalidPrivacyLevelErr)
 	}
 
 	// Generate the channel ID

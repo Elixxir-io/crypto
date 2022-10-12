@@ -34,6 +34,11 @@ var privacyLevelValues = map[string]PrivacyLevel{
 	"Secret":  Secret,
 }
 
+// Verify returns of the PrivacyLevel is valid.
+func (pl PrivacyLevel) Verify() bool {
+	return pl <= Secret
+}
+
 // String returns a human-readable name for the PrivacyLevel. Used for
 // debugging.
 func (pl PrivacyLevel) String() string {

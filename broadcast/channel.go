@@ -8,6 +8,7 @@ import (
 	"gitlab.com/elixxir/crypto/rsa"
 	"hash"
 	"io"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -27,6 +28,10 @@ const (
 	labelConstant = "XX_Network_Broadcast_Channel_Constant"
 	saltSize      = 32 // 256 bits
 	secretSize    = 32 // 256 bits
+
+	// NameMinChars is the minimum number of UTF-8 characters allowed in a
+	// channel name.
+	NameMinChars = 3 // 3 characters
 
 	// NameMaxChars is the maximum number of UTF-8 characters allowed in a
 	// channel name.
@@ -54,15 +59,28 @@ var (
 	ErrMalformedPrettyPrintedChannel = errors.New(
 		"Malformed pretty printed channel.")
 
+	// MinNameCharLenErr is returned when the name is shorter than the minimum
+	// character limit.
+	MinNameCharLenErr = errors.Errorf(
+		"name cannot be shorter than %d characters", NameMinChars)
+
 	// MaxNameCharLenErr is returned when the name is longer than the maximum
 	// character limit.
 	MaxNameCharLenErr = errors.Errorf(
 		"name cannot be longer than %d characters", NameMaxChars)
 
+	// NameInvalidCharErr is returned when the name contains disallowed
+	// characters.
+	NameInvalidCharErr = errors.New("name contains disallowed characters")
+
 	// MaxDescriptionCharLenErr is returned when the description is longer than
 	// the maximum character limit.
 	MaxDescriptionCharLenErr = errors.Errorf(
 		"description cannot be longer than %d characters", DescriptionMaxChars)
+
+	// InvalidPrivacyLevelErr is returned when the PrivacyLevel is not one of
+	// the valid chooses.
+	InvalidPrivacyLevelErr = errors.New("invalid privacy level")
 )
 
 // Channel is a multicast communication channel that retains the various privacy
@@ -113,12 +131,14 @@ func NewChannelVariableKeyUnsafe(name, description string, level PrivacyLevel,
 		return nil, nil, errors.New("maxKeySizeBits must be divisible by 8")
 	}
 
-	if len([]rune(name)) > NameMaxChars {
-		return nil, nil, MaxNameCharLenErr
+	if err := VerifyName(name); err != nil {
+		return nil, nil, err
 	}
-
-	if len([]rune(description)) > DescriptionMaxChars {
-		return nil, nil, MaxDescriptionCharLenErr
+	if err := VerifyDescription(description); err != nil {
+		return nil, nil, err
+	}
+	if !level.Verify() {
+		return nil, nil, errors.WithStack(InvalidPrivacyLevelErr)
 	}
 
 	// Get the key size and the number of fields
@@ -215,7 +235,7 @@ func NewChannelID(name, description string, level PrivacyLevel, salt,
 
 	intermediary :=
 		deriveIntermediary(
-		name, description, level, salt, rsaPubHash, secretHash)
+			name, description, level, salt, rsaPubHash, secretHash)
 	hkdf1 := hkdf.New(hkdfHash, intermediary, salt, []byte(hkdfInfo))
 
 	const identitySize = 32
@@ -255,7 +275,6 @@ func (c *Channel) PrivacyLevel() PrivacyLevel {
 	return c.level
 }
 
-// PrettyPrint prints a human-pasteable serialization of this Channel type.
 // PrettyPrint prints a human-readable serialization of this Channel that can b
 // copy and pasted.
 //
@@ -332,6 +351,17 @@ func NewChannelFromPrettyPrint(p string) (*Channel, error) {
 		Secret:          secret,
 	}
 
+	// Ensure that the name, description, and privacy level are valid
+	if err = VerifyName(c.Name); err != nil {
+		return nil, err
+	}
+	if err := VerifyDescription(c.Description); err != nil {
+		return nil, err
+	}
+	if !c.level.Verify() {
+		return nil, errors.WithStack(InvalidPrivacyLevelErr)
+	}
+
 	c.ReceptionID, err = NewChannelID(c.Name, c.Description, c.level, c.Salt,
 		c.RsaPubKeyHash, HashSecret(c.Secret))
 	if err != nil {
@@ -343,4 +373,41 @@ func NewChannelFromPrettyPrint(p string) (*Channel, error) {
 
 func split(r rune) bool {
 	return r == ',' || r == ':' || r == '>'
+}
+
+// nameMatch is the regular expressions that channel names are checked against.
+// It only allows letters, numbers, and underscores.
+//
+// Regex explains:
+//  ^       must start with any of the characters enumerated below
+//  \p{L}   any kind of letter from any language
+//  0-9     any digit 0 through 9
+//  _       underscore
+//  $       must end with any of the characters enumerated above
+//  +       match any number of character enumerated above
+var nameMatch = regexp.MustCompile(`[^\p{L}0-9_$]+`)
+
+// VerifyName verifies that the name is a valid channel name.
+func VerifyName(name string) error {
+	nameLen := len([]rune(name))
+
+	if nameLen < NameMinChars {
+		return errors.WithStack(MinNameCharLenErr)
+	} else if nameLen > NameMaxChars {
+		return errors.WithStack(MaxNameCharLenErr)
+	} else if nameMatch.MatchString(name) {
+		return errors.WithStack(NameInvalidCharErr)
+	}
+
+	return nil
+}
+
+// VerifyDescription verifies that the description is a valid channel
+// description.
+func VerifyDescription(description string) error {
+	if len([]rune(description)) > DescriptionMaxChars {
+		return errors.WithStack(MaxDescriptionCharLenErr)
+	}
+
+	return nil
 }

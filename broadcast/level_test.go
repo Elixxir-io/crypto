@@ -11,6 +11,30 @@ import (
 	"testing"
 )
 
+// Tests that PrivacyLevel.Verify returns true for all valid values of
+// PrivacyLevel.
+func TestPrivacyLevel_Verify(t *testing.T) {
+	tests := []PrivacyLevel{Public, Private, Secret}
+
+	for _, pl := range tests {
+		if !pl.Verify() {
+			t.Errorf("PrivacyLevel %s marked invalid.", pl)
+		}
+	}
+}
+
+// Error path: Tests that PrivacyLevel.Verify returns false for invalid values
+// of PrivacyLevel.
+func TestPrivacyLevel_Verify_Invalid(t *testing.T) {
+	tests := []PrivacyLevel{Secret + 1, 255}
+
+	for _, pl := range tests {
+		if pl.Verify() {
+			t.Errorf("PrivacyLevel %d marked valid.", pl)
+		}
+	}
+}
+
 // Consistency test of PrivacyLevel.String.
 func TestPrivacyLevel_String_Consistency(t *testing.T) {
 	expectedValues := []string{

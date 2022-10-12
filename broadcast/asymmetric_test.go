@@ -139,7 +139,7 @@ func TestRSAToPublic_Encrypt_Decrypt_NewChannel(t *testing.T) {
 
 	packetSize := 1000
 
-	name := "Asymmetric channel"
+	name := "Asymmetric_channel"
 	desc := "Asymmetric channel description"
 
 	ac, pk, err := NewChannel(name, desc, Public, packetSize, rng)
@@ -162,7 +162,8 @@ func TestRSAToPublic_Encrypt_Decrypt_NewChannel(t *testing.T) {
 	}
 
 	if bytes.Compare(decrypted, payload) != 0 {
-		t.Errorf("Decrypt did not return expected data\n\tExpected: %+v\n\tReceived: %+v\n", payload, decrypted)
+		t.Errorf("Decrypt did not return expected data."+
+			"\nexpected: %+v\nreceived: %+v", payload, decrypted)
 	}
 }
 
