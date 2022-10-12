@@ -121,8 +121,8 @@ func NewChannel(name, description string, level PrivacyLevel,
 //
 // Do not use this function unless you know what you are doing.
 //
-// maxKeySizeBits is the length, in bits, of an RSA key defining the channel in
-// bits. It must be divisible by 8. packetPayloadLength is in bytes.
+// packetPayloadLength is in bytes. maxKeySizeBits is the length, in bits, of an
+// RSA key defining the channel in bits. It must be divisible by 8.
 func NewChannelVariableKeyUnsafe(name, description string, level PrivacyLevel,
 	packetPayloadLength, maxKeySizeBits int, rng csprng.Source) (
 	*Channel, rsa.PrivateKey, error) {
