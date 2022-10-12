@@ -9,6 +9,7 @@ package channel
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"fmt"
 	"gitlab.com/elixxir/crypto/backup"
 	"gitlab.com/xx_network/crypto/csprng"
@@ -16,6 +17,32 @@ import (
 	"strings"
 	"testing"
 )
+
+// Tests that a message signed with a PrivateIdentity can be verified with the
+// same identity once is has been exported and imported.
+func TestPrivateIdentity_export_ImportPrivateIdentity_KeySign(t *testing.T) {
+	rng := csprng.NewSystemRNG()
+	pi, _ := GenerateIdentity(rng)
+
+	message := make([]byte, 256)
+	_, _ = rng.Read(message)
+	signature := ed25519.Sign(*pi.Privkey, message)
+
+	password := "hunter2"
+	exported, err := pi.export(password, backup.DefaultParams(), rng)
+	if err != nil {
+		t.Errorf("Failed to export PrivateIdentity: %+v", err)
+	}
+
+	newPI, err := ImportPrivateIdentity(password, exported)
+	if err != nil {
+		t.Errorf("Failed to import PrivateIdentity: %+v", err)
+	}
+
+	if !ed25519.Verify(newPI.PubKey, message, signature) {
+		t.Errorf("Failed to verify message signed by unmarshalled channel.")
+	}
+}
 
 // Tests that a PrivateIdentity exported via ImportPrivateIdentity.export and
 // imported used ImportPrivateIdentity matches the original.
