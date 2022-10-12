@@ -29,7 +29,6 @@ func TestChannel_PrettyPrint(t *testing.T) {
 	}
 
 	pretty1 := channel1.PrettyPrint()
-	t.Log(pretty1)
 
 	channel2, err := NewChannelFromPrettyPrint(pretty1)
 	if err != nil {
