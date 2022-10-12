@@ -39,9 +39,6 @@ var ErrSecretSizeIncorrect = errors.New(
 var ErrSaltSizeIncorrect = errors.New(
 	"NewChannelID salt must be 32 bytes long.")
 
-// ErrPayloadLengthIsOdd indicates an odd packet payload length.
-var ErrPayloadLengthIsOdd = errors.New("Packet payload length must be even.")
-
 // ErrMalformedPrettyPrintedChannel indicates the channel description blob was
 // malformed.
 var ErrMalformedPrettyPrintedChannel = errors.New(
@@ -63,8 +60,8 @@ type Channel struct {
 	// when sharing channel information.
 	level PrivacyLevel
 
-	// Only appears in memory; is not contained in the marshalled version.
-	// Lazily evaluated on first use.
+	// This key only appears in memory; it is not contained in the marshalled
+	// version. It is lazily evaluated on first use.
 	//  key = H(ReceptionID)
 	key []byte
 }
@@ -80,12 +77,10 @@ func NewChannel(name, description string, level PrivacyLevel,
 // NewChannelVariableKeyUnsafe creates a new channel with a variable RSA key
 // size calculated to optimally use space in the packer.
 //
-// Do not use unless you know what you are doing.
+// Do not use this function unless you know what you are doing.
 //
-// maxKeySizeBits received the number of the length of RSA key defining the
-// channel in bits. It must be divisible by 8.
-//
-// packetPayloadLength is in bytes.
+// maxKeySizeBits is the length, in bits, of an RSA key defining the channel in
+// bits. It must be divisible by 8. packetPayloadLength is in bytes.
 func NewChannelVariableKeyUnsafe(name, description string, level PrivacyLevel,
 	packetPayloadLength, maxKeySizeBits int, rng csprng.Source) (
 	*Channel, rsa.PrivateKey, error) {
@@ -95,13 +90,13 @@ func NewChannelVariableKeyUnsafe(name, description string, level PrivacyLevel,
 	}
 
 	// Get the key size and the number of fields
-	keySize, numSubPayloads := calculateKeySize(
-		packetPayloadLength, maxKeySizeBits/8)
+	keySize, numSubPayloads :=
+		calculateKeySize(packetPayloadLength, maxKeySizeBits/8)
 
 	s := rsa.GetScheme()
 
-	// Multiply the key size by 8 because generate expects key size in bits not
-	// bytes
+	// Multiply the key size by 8 because Scheme.Generate expects a key size in
+	// bits not bytes
 	pk, err := s.Generate(rng, keySize*8)
 	if err != nil {
 		return nil, nil, err
@@ -113,8 +108,9 @@ func NewChannelVariableKeyUnsafe(name, description string, level PrivacyLevel,
 	if err != nil {
 		jww.FATAL.Panic(err)
 	}
-	if n != 32 {
-		jww.FATAL.Panic("failed to read from rng")
+	if n != secretSize {
+		jww.FATAL.Panicf(
+			"secret requires %d bytes, found %d bytes", secretSize, n)
 	}
 
 	pubKeyHash := HashPubKey(pk.Public())
@@ -143,7 +139,7 @@ func UnmarshalChannel(data []byte) (*Channel, error) {
 	return &c, json.Unmarshal(data, &c)
 }
 
-// Marshal serialises the Symmetric object into JSON.
+// Marshal serialises the Channel into JSON.
 func (c *Channel) Marshal() ([]byte, error) {
 	return json.Marshal(c)
 }
@@ -159,17 +155,17 @@ func (c *Channel) Verify() bool {
 	gen, err := NewChannelID(c.Name, c.Description, c.level, c.Salt,
 		c.RsaPubKeyHash, HashSecret(c.Secret))
 	if err != nil {
-		jww.ERROR.Printf(
-			"Channel verify failed due to error from channel generation: %+v",
-			err)
+		jww.ERROR.Printf("Channel verify failed due to error from "+
+			"channel generation: %+v", err)
 		return false
 	}
 	return c.ReceptionID.Cmp(gen)
 }
 
-// NewChannelID creates a new channel ID. The resulting 32-byte identity is
-// derived like this:
-//  intermediary = H(name | description | privacyLevel | rsaPubHash | hashedSecret | salt)
+// NewChannelID creates a new channel [id.ID] with a type [id.User].
+//
+// The 32-byte identity is derived as described below:
+//  intermediary = H(name | description | salt | rsaPubHash | hashedSecret)
 //  identityBytes = HKDF(intermediary, salt, hkdfInfo)
 func NewChannelID(name, description string, level PrivacyLevel, salt,
 	rsaPubHash, secretHash []byte) (*id.ID, error) {
@@ -185,20 +181,21 @@ func NewChannelID(name, description string, level PrivacyLevel, salt,
 		return h
 	}
 
-	intermediary := deriveIntermediary(
+	intermediary :=
+		deriveIntermediary(
 		name, description, level, salt, rsaPubHash, secretHash)
-	hkdf1 := hkdf.New(hkdfHash,
-		intermediary,
-		salt,
-		[]byte(hkdfInfo))
+	hkdf1 := hkdf.New(hkdfHash, intermediary, salt, []byte(hkdfInfo))
 
-	identityBytes := make([]byte, 32)
+	const identitySize = 32
+	identityBytes := make([]byte, identitySize)
 	n, err := io.ReadFull(hkdf1, identityBytes)
 	if err != nil {
 		jww.FATAL.Panic(err)
 	}
-	if n != 32 {
-		jww.FATAL.Panic("failed to read from HKDF")
+	if n != identitySize {
+		jww.FATAL.Panicf(
+			"channel identity requires %d bytes, HKDF provided %d bytes",
+			identitySize, n)
 	}
 
 	sid := &id.ID{}
@@ -227,12 +224,13 @@ func (c *Channel) PrivacyLevel() PrivacyLevel {
 }
 
 // PrettyPrint prints a human-pasteable serialization of this Channel type.
+// PrettyPrint prints a human-readable serialization of this Channel that can b
+// copy and pasted.
 //
 // Example:
-//  <XXChannel:v1:"name",description:"blah",math:"qw432432sdfserfwerewrwerewrewrwerewrwerewerwee","qw432432sdfserfwerewrwerewrewrwerewrwerewerwee","qw432432sdfserfwerewrwerewrewrwerewrwerewerwee","qw432432sdfserfwerewrwerewrewrwerewrwerewerwee",>
+//  <Speakeasy-v1:Test Channel,description:This is a test channel,secrets:YxHhRAKy2D4XU2oW5xnW/3yaqOeh8nO+ZSd3nUmiQ3c=,6pXN2H9FXcOj7pjJIZoq6nMi4tGX2s53fWH5ze2dU1g=,493,1,MVjkHlm0JuPxQNAn6WHsPdOw9M/BUF39p7XB/QEkQyc=>
 func (c *Channel) PrettyPrint() string {
-	var b strings.Builder
-	_, _ = fmt.Fprintf(&b,
+	return fmt.Sprintf(
 		"<Speakeasy-v%d:%s,description:%s,level:%s,secrets:%s,%s,%d,%d,%s>",
 		version,
 		c.Name,
@@ -243,11 +241,10 @@ func (c *Channel) PrettyPrint() string {
 		c.RsaPubKeyLength,
 		c.RSASubPayloads,
 		base64.StdEncoding.EncodeToString(c.Secret))
-	return b.String()
 }
 
 // NewChannelFromPrettyPrint creates a new Channel given a valid pretty printed
-// Channel serialization via the Channel.PrettyPrint method.
+// Channel serialization generated using the Channel.PrettyPrint method.
 func NewChannelFromPrettyPrint(p string) (*Channel, error) {
 	fields := strings.FieldsFunc(p, split)
 	if len(fields) != 12 {
