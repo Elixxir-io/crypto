@@ -187,6 +187,51 @@ func TestDecodeShareURL_NewChannelIDError(t *testing.T) {
 	}
 }
 
+// Tests that DecodeShareURL returns an error when the name in the URL is too
+// long.
+func TestDecodeShareURL_NameMaxLengthError(t *testing.T) {
+	url := "https://internet.speakeasy.tech/" +
+		"?0Name=" + strings.Repeat("A", NameMaxChars+1) +
+		"&1Description=Here+is+information+about+my+channel." +
+		"&2Level=Public" +
+		"&e=GBBSbhYkAWj58b1befVCOQIUpnyv3nw2B97oe3Z0%2B6A%3D" +
+		"&k=ktKmxghB12i9I3ava5bX4hqH82gVCFnbOccKicNIBwk%3D" +
+		"&l=493" +
+		"&m=0" +
+		"&p=1" +
+		"&s=95flF3q1rSlqQXbrksem9HHK%2BFeG2iHn7AEoGk%2BI230%3D" +
+		"&v=0"
+
+	_, err := DecodeShareURL(url, "")
+	if err != MaxNameCharLenErr {
+		t.Errorf("Did not receive expected error when the name in the URL is "+
+			"too long.\nexpected: %s\nreceived: %+v", MaxNameCharLenErr, err)
+	}
+}
+
+// Tests that DecodeShareURL returns an error when the description in the URL is
+// too long.
+func TestDecodeShareURL_DescriptionMaxLengthError(t *testing.T) {
+	url := "https://internet.speakeasy.tech/" +
+		"?0Name=Channel" +
+		"&1Description=" + strings.Repeat("A", DescriptionMaxChars+1) +
+		"&2Level=Public" +
+		"&e=GBBSbhYkAWj58b1befVCOQIUpnyv3nw2B97oe3Z0%2B6A%3D" +
+		"&k=ktKmxghB12i9I3ava5bX4hqH82gVCFnbOccKicNIBwk%3D" +
+		"&l=493" +
+		"&m=0" +
+		"&p=1" +
+		"&s=95flF3q1rSlqQXbrksem9HHK%2BFeG2iHn7AEoGk%2BI230%3D" +
+		"&v=0"
+
+	_, err := DecodeShareURL(url, "")
+	if err != MaxDescriptionCharLenErr {
+		t.Errorf("Did not receive expected error when the description in the "+
+			"URL is too long.\nexpected: %s\nreceived: %+v",
+			MaxDescriptionCharLenErr, err)
+	}
+}
+
 // Tests that GetShareUrlType returns the expected PrivacyLevel for every time
 // of URL.
 func TestGetShareUrlType(t *testing.T) {

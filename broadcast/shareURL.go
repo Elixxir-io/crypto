@@ -222,6 +222,14 @@ func DecodeShareURL(url, password string) (*Channel, error) {
 		}
 	}
 
+	// Ensure that the name and description are of the correct length
+	if len([]rune(c.Name)) > NameMaxChars {
+		return nil, MaxNameCharLenErr
+	}
+	if len([]rune(c.Description)) > DescriptionMaxChars {
+		return nil, MaxDescriptionCharLenErr
+	}
+
 	// Generate the channel ID
 	c.ReceptionID, err = NewChannelID(c.Name, c.Description, c.level, c.Salt,
 		c.RsaPubKeyHash, HashSecret(c.Secret))
