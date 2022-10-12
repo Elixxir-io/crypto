@@ -30,6 +30,7 @@ const (
 )
 
 // encryptIdentity encrypts the data for an Identity using XChaCha20-Poly1305.
+// The resulting encrypted data has the none prepended to it.
 func encryptIdentity(data, key []byte, csprng io.Reader) []byte {
 	chaCipher := initChaCha20Poly1305(key)
 	nonce := make([]byte, chaCipher.NonceSize())
@@ -47,6 +48,8 @@ func decryptIdentity(data, key []byte) ([]byte, error) {
 	if (len(data) - nonceLen) <= 0 {
 		return nil, errors.Errorf(readNonceLenErr, len(data))
 	}
+
+	// The first nonceLen bytes of ciphertext are the nonce.
 	nonce, ciphertext := data[:nonceLen], data[nonceLen:]
 	plaintext, err := chaCipher.Open(nil, nonce, ciphertext, nil)
 	if err != nil {

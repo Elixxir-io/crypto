@@ -254,7 +254,7 @@ func decodePrivateIdentity(data []byte) (PrivateIdentity, error) {
 
 	codesetVersion := buff.Next(codesetLen)[0]
 	privKey := ed25519.PrivateKey(buff.Next(ed25519.PrivateKeySize))
-	pubKey := ed25519.PublicKey(buff.Next(ed25519.PublicKeySize + codesetLen))
+	pubKey := ed25519.PublicKey(buff.Next(ed25519.PublicKeySize))
 
 	pi := PrivateIdentity{
 		Privkey:  &privKey,
