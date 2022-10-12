@@ -27,22 +27,43 @@ const (
 	labelConstant = "XX_Network_Broadcast_Channel_Constant"
 	saltSize      = 32 // 256 bits
 	secretSize    = 32 // 256 bits
+
+	// NameMaxChars is the maximum number of UTF-8 characters allowed in a
+	// channel name.
+	NameMaxChars = 24 // 24 characters
+
+	// DescriptionMaxChars is the maximum number of UTF-8 characters allowed in
+	// a channel description.
+	DescriptionMaxChars = 144 // 144 characters
 )
 
 var channelHash = blake2b.New256
 
-// ErrSecretSizeIncorrect indicates an incorrect sized secret.
-var ErrSecretSizeIncorrect = errors.New(
-	"NewChannelID secret must be 32 bytes long.")
+// Error messages.
+var (
+	// ErrSecretSizeIncorrect indicates an incorrect sized secret.
+	ErrSecretSizeIncorrect = errors.New(
+		"NewChannelID secret must be 32 bytes long.")
 
-// ErrSaltSizeIncorrect indicates an incorrect sized salt.
-var ErrSaltSizeIncorrect = errors.New(
-	"NewChannelID salt must be 32 bytes long.")
+	// ErrSaltSizeIncorrect indicates an incorrect sized salt.
+	ErrSaltSizeIncorrect = errors.New(
+		"NewChannelID salt must be 32 bytes long.")
 
-// ErrMalformedPrettyPrintedChannel indicates the channel description blob was
-// malformed.
-var ErrMalformedPrettyPrintedChannel = errors.New(
-	"Malformed pretty printed channel.")
+	// ErrMalformedPrettyPrintedChannel indicates the channel description blob
+	// was malformed.
+	ErrMalformedPrettyPrintedChannel = errors.New(
+		"Malformed pretty printed channel.")
+
+	// MaxNameCharLenErr is returned when the name is longer than the maximum
+	// character limit.
+	MaxNameCharLenErr = errors.Errorf(
+		"name cannot be longer than %d characters", NameMaxChars)
+
+	// MaxDescriptionCharLenErr is returned when the description is longer than
+	// the maximum character limit.
+	MaxDescriptionCharLenErr = errors.Errorf(
+		"description cannot be longer than %d characters", DescriptionMaxChars)
+)
 
 // Channel is a multicast communication channel that retains the various privacy
 // notions that this mix network provides.
@@ -68,6 +89,9 @@ type Channel struct {
 
 // NewChannel creates a new channel with a variable RSA key size calculated
 // based off of recommended security parameters.
+//
+// The name cannot be more than NameMaxChars characters long and the description
+// cannot be more than DescriptionMaxChars characters long.
 func NewChannel(name, description string, level PrivacyLevel,
 	packetPayloadLength int, rng csprng.Source) (*Channel, rsa.PrivateKey, error) {
 	return NewChannelVariableKeyUnsafe(name, description, level,
@@ -87,6 +111,14 @@ func NewChannelVariableKeyUnsafe(name, description string, level PrivacyLevel,
 
 	if maxKeySizeBits%8 != 0 {
 		return nil, nil, errors.New("maxKeySizeBits must be divisible by 8")
+	}
+
+	if len([]rune(name)) > NameMaxChars {
+		return nil, nil, MaxNameCharLenErr
+	}
+
+	if len([]rune(description)) > DescriptionMaxChars {
+		return nil, nil, MaxDescriptionCharLenErr
 	}
 
 	// Get the key size and the number of fields
