@@ -53,15 +53,15 @@ var honorifics = sampler{
 }
 
 var adjectives = sampler{
-	sampleFrom:       [][]string{engAdj[:]},
+	sampleFrom:       [][]string{engAdjV0[:]},
 	bitDepthLanguage: 0,
-	bitDepthEach:     []uint8{getBitDepth(len(engAdj))},
+	bitDepthEach:     []uint8{getBitDepth(len(engAdjV0))},
 }
 
 var nouns = sampler{
-	sampleFrom:       [][]string{engNoun[:]},
+	sampleFrom:       [][]string{engNounV0[:]},
 	bitDepthLanguage: 0,
-	bitDepthEach:     []uint8{getBitDepth(len(engNoun))},
+	bitDepthEach:     []uint8{getBitDepth(len(engNounV0))},
 }
 
 var depthBlinders = makeDepthBlinders()
@@ -71,7 +71,7 @@ type CodeNamePart struct {
 	Generated string
 }
 
-var colorBitDepth = getBitDepth(len(colors))
+var colorBitDepth = getBitDepth(len(colorsV0))
 
 func generateCodeNamePart(h hash.Hash, data []byte, c string, s sampler) CodeNamePart {
 
@@ -96,13 +96,13 @@ func generateColor(h hash.Hash, data []byte) string {
 
 	d := uint64(math.MaxUint64)
 
-	for d > uint64(len(colors))-1 {
+	for d > uint64(len(colorsV0))-1 {
 		data = hasher(h, data, colorSalt)
 		d = binary.BigEndian.Uint64(data)
 		d = d & depthBlinders[colorBitDepth]
 	}
 
-	return colors[d]
+	return colorsV0[d]
 }
 
 func generateExtension(h hash.Hash, data []byte) string {
