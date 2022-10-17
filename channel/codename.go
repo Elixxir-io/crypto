@@ -8,6 +8,7 @@
 package channel
 
 import (
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/binary"
 	"hash"
@@ -22,9 +23,22 @@ const (
 	nounSalt      = "nounSalt"
 	colorSalt     = "colorSalt"
 	extensionSalt = "extensionSalt"
-
-	codesetv0 = 0
 )
+
+// Codeset versions.
+const (
+	// currentCodesetVersion should always point to the newest codeset version
+	// that new Identity objects should be generated with.
+	currentCodesetVersion = codesetV0
+	codesetV0             = 0
+)
+
+type identityConstructor func(pub ed25519.PublicKey, codeset uint8) (Identity, error)
+
+// identityConstructorCodesets is a map of codeset version to its constructor.
+var identityConstructorCodesets = map[uint8]identityConstructor{
+	codesetV0: constructIdentityV0,
+}
 
 type sampler struct {
 	sampleFrom       [][]string
@@ -61,7 +75,7 @@ var colorBitDepth = getBitDepth(len(colors))
 
 func generateCodeNamePart(h hash.Hash, data []byte, c string, s sampler) CodeNamePart {
 
-	//only one language currently, we will upgrade this
+	// only one language currently, we will upgrade this
 	lang := English
 
 	d := uint64(math.MaxUint64)
