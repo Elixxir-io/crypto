@@ -32,6 +32,7 @@ const (
 	nameKey            = "0Name"
 	descKey            = "1Description"
 	levelKey           = "2Level"
+	createdKey         = "3Created"
 	saltKey            = "s"
 	rsaPubKeyHashKey   = "k"
 	rsaPubKeyLengthKey = "l"
@@ -234,8 +235,8 @@ func DecodeShareURL(url, password string) (*Channel, error) {
 	}
 
 	// Generate the channel ID
-	c.ReceptionID, err = NewChannelID(c.Name, c.Description, c.Level, c.Salt,
-		c.RsaPubKeyHash, HashSecret(c.Secret))
+	c.ReceptionID, err = NewChannelID(c.Name, c.Description, c.Level, c.Created,
+		c.Salt, c.RsaPubKeyHash, HashSecret(c.Secret))
 	if err != nil {
 		return nil, errors.Errorf(newReceptionIdErr, err)
 	}
@@ -283,6 +284,7 @@ func (c *Channel) encodePublicShareURL(q goUrl.Values) goUrl.Values {
 	q.Set(nameKey, c.Name)
 	q.Set(descKey, c.Description)
 	q.Set(levelKey, c.Level.Marshal())
+	q.Set(createdKey, strconv.FormatInt(c.Created.UnixNano(), 10))
 	q.Set(saltKey, base64.StdEncoding.EncodeToString(c.Salt))
 	q.Set(rsaPubKeyHashKey, base64.StdEncoding.EncodeToString(c.RsaPubKeyHash))
 	q.Set(rsaPubKeyLengthKey, strconv.Itoa(c.RsaPubKeyLength))

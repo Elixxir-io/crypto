@@ -14,6 +14,7 @@ import (
 	"gitlab.com/elixxir/crypto/rsa"
 	oldRsa "gitlab.com/xx_network/crypto/signature/rsa"
 	"gitlab.com/xx_network/primitives/id"
+	"gitlab.com/xx_network/primitives/netTime"
 	"math/rand"
 	"reflect"
 	"testing"
@@ -149,6 +150,7 @@ func TestNewSymmetricKey_Consistency(t *testing.T) {
 		key, err := NewSymmetricKey("alice",
 			"chan description",
 			Public,
+			netTime.Now(),
 			[]byte("salt"),
 			[]byte("my fake rsa key"),
 			secret)
@@ -185,6 +187,7 @@ func TestNewSymmetricKey_Unique(t *testing.T) {
 		key, err := NewSymmetricKey("alice",
 			"chan description",
 			Public,
+			netTime.Now(),
 			[]byte("salt"),
 			[]byte("my fake rsa key"),
 			secret)
