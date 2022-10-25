@@ -8,6 +8,7 @@ import (
 	"hash"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/blake2b"
@@ -21,7 +22,7 @@ func TestChannel_deriveIntermediary_vector(t *testing.T) {
 	name := "mychannelname"
 	description := "my channel description"
 	level := Public
-	created := netTime.Now()
+	created := time.Date(1955, 11, 5, 12, 0, 0, 0, time.UTC)
 	salt, err := hex.DecodeString(
 		"8a26d3c2edcaef6c9b401b5b0197505d897bf415b3f43c8016f4fc46db729873")
 	require.NoError(t, err)
@@ -29,17 +30,15 @@ func TestChannel_deriveIntermediary_vector(t *testing.T) {
 		"4ee999fc28e18b439c36f0ca20bebb178cb8a5115d394bcd8b767bca1e90309d")
 	require.NoError(t, err)
 	secret, err := hex.DecodeString(
-		"fec630412265ee468055455c8bf52dbcb40ae79eb3d243db1373383b8073ffcd")
+		"8bcc7ab97b1c7638067f93eb70369c1567ca3e58db65741135cd40acc068333c")
 	require.NoError(t, err)
 
 	intermediary := deriveIntermediary(name, description, level, created, salt,
 		hashedPubKey, HashSecret(secret))
 	wantIntermediary, err := hex.DecodeString(
-		"8bcc7ab97b1c7638067f93eb70369c1567ca3e58db65741135cd40acc068333c")
+		"e75040c43f53df4ce93099bd324cc1593aa97c6d00bb0d5a8410fd2bd2b84306")
 	require.NoError(t, err)
 	require.Equal(t, wantIntermediary, intermediary)
-
-	t.Logf("%s", hex.EncodeToString(wantIntermediary))
 
 	hkdfHash := func() hash.Hash {
 		h, err := blake2b.New256(nil)
@@ -70,7 +69,7 @@ func TestChannel_deriveIntermediary_vector(t *testing.T) {
 	}
 
 	wantID, err := hex.DecodeString(
-		"a49f37bfa37e02b28660519a32cdd749c4d7124364c12de2abb26dc4ea1725ef03")
+		"c64f70ee4897a5b7b8a02991541740631c0e9c16a96305914016f987772ff3a503")
 	require.NoError(t, err)
 	require.Equal(t, rid[:], wantID)
 }

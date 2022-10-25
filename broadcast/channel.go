@@ -104,7 +104,8 @@ type Channel struct {
 	// when sharing channel information.
 	Level PrivacyLevel
 
-	// Time the channel is created. Note that this is converted to unix nano for
+	// Time the channel is created. It is used as a hint as to when to start
+	// picking up messages. Note that this is converted to Unix nano (int64) for
 	// all processing and transportation.
 	Created time.Time
 
