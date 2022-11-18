@@ -119,6 +119,7 @@ var privateKeyPem = []byte{45, 45, 45, 45, 45, 66, 69, 71, 73, 78, 32, 82, 83,
 func TestPrivateKey_PublicKey_EncryptOAEP_Consistency(t *testing.T) {
 	// Cannot run consistency test when running in Javascript
 	if runtime.GOOS == "js" {
+		t.Log("Javascript environment; skipping this test.")
 		return
 	}
 
