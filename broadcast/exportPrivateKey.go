@@ -101,10 +101,28 @@ type portablePrivKey struct {
 
 // ExportPrivateKey exports the channel's RSA private key into a portable
 // encrypted string that can be used to restore it later.
-func ExportPrivateKey(channelID *id.ID, privKey rsa.PrivateKey, password string,
-	csprng io.Reader) ([]byte, error) {
+//
+// Each call to ExportPrivateKey produces a different encrypted packet
+// regardless if the same password is used for the same channel. It cannot be
+// determined which channel the payload is for nor that two payloads are for the
+// same channel.
+//
+// The passwords between each call are not related. They can be the same or
+// different with no adverse impact on the security properties.
+func ExportPrivateKey(channelID *id.ID, privKey rsa.PrivateKey,
+	encryptionPassword string, csprng io.Reader) ([]byte, error) {
 	ppk := &portablePrivKey{channelID, privKey}
-	return ppk.export(password, backup.DefaultParams(), csprng)
+	return ppk.export(encryptionPassword, backup.DefaultParams(), csprng)
+}
+
+// ExportPrivateKeyCustomParams exports the channel's RSA private key into a
+// portable encrypted string that can be used to restore it later using custom
+// Argon 2 parameters.
+func ExportPrivateKeyCustomParams(channelID *id.ID, privKey rsa.PrivateKey,
+	encryptionPassword string, params backup.Params, csprng io.Reader) (
+	[]byte, error) {
+	ppk := &portablePrivKey{channelID, privKey}
+	return ppk.export(encryptionPassword, params, csprng)
 }
 
 // export encrypts and channel's RSA private key and outputs it with the channel
@@ -121,10 +139,10 @@ func ExportPrivateKey(channelID *id.ID, privKey rsa.PrivateKey, password string,
 //	|     string     |                   base 64 encoded                  | string |
 //	+----------------+----------------------------------------------------+--------+
 func (ppk *portablePrivKey) export(
-	password string, params backup.Params, csprng io.Reader) ([]byte, error) {
+	encryptionPassword string, params backup.Params, csprng io.Reader) ([]byte, error) {
 
 	// Encrypt the portablePrivKey with the user password
-	encryptedData, salt, err := ppk.encrypt(password, params, csprng)
+	encryptedData, salt, err := ppk.encrypt(encryptionPassword, params, csprng)
 	if err != nil {
 		return nil, errors.Errorf(encryptErr, err)
 	}
@@ -150,7 +168,8 @@ func (ppk *portablePrivKey) export(
 
 // ImportPrivateKey returns the channel ID and private RSA key in the encrypted
 // portable string.
-func ImportPrivateKey(password string, data []byte) (*id.ID, rsa.PrivateKey, error) {
+func ImportPrivateKey(
+	encryptionPassword string, data []byte) (*id.ID, rsa.PrivateKey, error) {
 	var err error
 
 	// Ensure the data is of sufficient length
@@ -185,7 +204,7 @@ func ImportPrivateKey(password string, data []byte) (*id.ID, rsa.PrivateKey, err
 	// Unmarshal the data according to its version
 	decodeFunc, exists := decodeVersions[string(version)]
 	if exists {
-		ppk, err2 := decodeFunc(password, data)
+		ppk, err2 := decodeFunc(encryptionPassword, data)
 		if err2 != nil {
 			return nil, nil, err2
 		}
@@ -206,7 +225,7 @@ func (ppk *portablePrivKey) encrypt(password string, params backup.Params,
 		return nil, nil, err
 	}
 
-	// Derive key used to encrypt data
+	// Derive key used to encrypt data via Argon2
 	key := deriveKey(password, salt, params)
 
 	// Marshal portablePrivKey data to be encrypted

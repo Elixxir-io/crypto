@@ -55,6 +55,35 @@ func Test_portablePrivKey_export_ImportPrivateKey_KeySign(t *testing.T) {
 	}
 }
 
+// Tests that a portablePrivKey exported with custom Argon2 parameters via
+// ExportPrivateKeyCustomParams and can be imported using ImportPrivateKey.
+func Test_ExportPrivateKeyCustomParams_ImportPrivateKey(t *testing.T) {
+	rng := csprng.NewSystemRNG()
+	ppk := newPPK(18, rng, t)
+
+	password := "hunter2"
+	exported, err := ExportPrivateKeyCustomParams(ppk.channelID, ppk.privKey,
+		password, backup.Params{Time: 1, Memory: 2, Threads: 3}, rng)
+	if err != nil {
+		t.Errorf("Failed to export portablePrivKey: %+v", err)
+	}
+
+	channelID, privKey, err := ImportPrivateKey(password, exported)
+	if err != nil {
+		t.Errorf("Failed to import portablePrivKey: %+v", err)
+	}
+
+	if !channelID.Cmp(ppk.channelID) {
+		t.Errorf("Incorrect channel ID.\nexpected: %s\nreceived: %s",
+			ppk.channelID, channelID)
+	}
+
+	if !privKey.GetGoRSA().Equal(ppk.privKey.GetGoRSA()) {
+		t.Errorf("Incorrect RSA private key.\nexpected: %s\nreceived: %s",
+			ppk.privKey, privKey)
+	}
+}
+
 // Tests that a portablePrivKey exported via portablePrivKey.export and imported
 // using ImportPrivateKey matches the original.
 func Test_portablePrivKey_export_ImportPrivateKey(t *testing.T) {
