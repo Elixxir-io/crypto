@@ -9,6 +9,7 @@ package dm
 import (
 	"crypto/hmac"
 	"encoding/binary"
+
 	"github.com/pkg/errors"
 	"gitlab.com/elixxir/crypto/nike"
 	"gitlab.com/xx_network/crypto/csprng"
@@ -19,7 +20,7 @@ import (
 // IsSelfEncrypted will return whether the ciphertext provided has been
 // encrypted by the owner of the passed in private key. Returns true
 // if the ciphertext has been encrypted by the user.
-func (s *scheme) IsSelfEncrypted(data []byte,
+func (s *dmCipher) IsSelfEncrypted(data []byte,
 	myPrivateKey nike.PrivateKey) bool {
 
 	// Pull nonce from ciphertext
@@ -43,7 +44,7 @@ func (s *scheme) IsSelfEncrypted(data []byte,
 
 // EncryptSelf will encrypt the passed plaintext. This will simulate the
 // encryption protocol in Encrypt, using just the user's public key.
-func (s *scheme) EncryptSelf(plaintext []byte, myPrivateKey nike.PrivateKey,
+func (s *dmCipher) EncryptSelf(plaintext []byte, myPrivateKey nike.PrivateKey,
 	maxPayloadSize int) ([]byte, error) {
 
 	// Construct nonce
@@ -95,7 +96,7 @@ func (s *scheme) EncryptSelf(plaintext []byte, myPrivateKey nike.PrivateKey,
 
 // DecryptSelf will decrypt the passed ciphertext. This will check if the
 // ciphertext is expected using IsSelfEncrypted.
-func (s *scheme) DecryptSelf(ciphertext []byte,
+func (s *dmCipher) DecryptSelf(ciphertext []byte,
 	myPrivateKey nike.PrivateKey) ([]byte, error) {
 	if !s.IsSelfEncrypted(ciphertext, myPrivateKey) {
 		return nil, errors.New("Could not confirm that data is self-encrypted")

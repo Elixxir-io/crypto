@@ -8,8 +8,9 @@ package dm
 
 import (
 	"bytes"
-	"gitlab.com/elixxir/crypto/nike/ecdh"
 	"testing"
+
+	"gitlab.com/elixxir/crypto/nike/ecdh"
 )
 
 func TestScheme_EncryptSelf(t *testing.T) {
@@ -22,7 +23,7 @@ func TestScheme_EncryptSelf(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to encrypt: %+v", err)
 	}
-	
+
 	plaintext, err := Cipher.DecryptSelf(ciphertext, bobPrivKey)
 	if err != nil {
 		t.Fatalf("Failed to decrypt: %+v", err)
