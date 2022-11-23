@@ -61,11 +61,13 @@ type DMCipher interface {
 	// EncryptSelf will encrypt the passed plaintext. This will simulate the
 	// encryption protocol in Encrypt, using just the user's public key.
 	EncryptSelf(plaintext []byte, myPrivateKey nike.PrivateKey,
+		partnerStaticPubKey nike.PublicKey,
 		maxPayloadSize int) ([]byte, error)
 
-	// DecryptSelf will decrypt the passed ciphertext. This will check if the
-	// ciphertext is expected using IsSelfEncrypted.
-	DecryptSelf(ciphertext []byte, myPrivateKey nike.PrivateKey) ([]byte, error)
+	// DecryptSelf will decrypt the passed ciphertext. This will
+	// check if the ciphertext is expected using IsSelfEncrypted.
+	DecryptSelf(ciphertext []byte, myPrivateKey nike.PrivateKey) (
+		partnerstaticPubKey nike.PublicKey, plaintext []byte, err error)
 }
 
 type dmCipher struct{}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/pkg/errors"
 	"gitlab.com/elixxir/crypto/nike"
+	"gitlab.com/elixxir/crypto/nike/ecdh"
 	"gitlab.com/xx_network/crypto/csprng"
 	"golang.org/x/crypto/blake2b"
 	"golang.org/x/crypto/chacha20poly1305"
@@ -32,19 +33,17 @@ func (s *dmCipher) IsSelfEncrypted(data []byte,
 
 	// Construct expected public key using nonce in ciphertext and
 	// the user's private key
-	expectedPubKey := constructSelfCryptPublicKey(myPrivateKey.Bytes(), nonce)
+	expectedPubKey := constructSelfCryptPublicKey(myPrivateKey.Bytes(),
+		nonce)
 
 	// Check that generated public key matches public key within ciphertext
-	if hmac.Equal(receivedPubKey, expectedPubKey[:]) {
-		return true
-	}
-
-	return false
+	return hmac.Equal(receivedPubKey, expectedPubKey[:])
 }
 
 // EncryptSelf will encrypt the passed plaintext. This will simulate the
 // encryption protocol in Encrypt, using just the user's public key.
 func (s *dmCipher) EncryptSelf(plaintext []byte, myPrivateKey nike.PrivateKey,
+	partnerPublicKey nike.PublicKey,
 	maxPayloadSize int) ([]byte, error) {
 
 	// Construct nonce
@@ -65,12 +64,17 @@ func (s *dmCipher) EncryptSelf(plaintext []byte, myPrivateKey nike.PrivateKey,
 	chaCipher, err := chacha20poly1305.NewX(chaKey[:])
 	panicOnChaChaFailure(err)
 
+	partnerPubKeyBytes := partnerPublicKey.Bytes()
+	msg := make([]byte, len(plaintext)+len(partnerPubKeyBytes))
+	copy(msg[:len(partnerPubKeyBytes)], partnerPubKeyBytes)
+	copy(msg[len(partnerPubKeyBytes):], plaintext)
+
 	// Encrypt plaintext
-	encrypted := chaCipher.Seal(nil, nonce, plaintext, nil)
+	encrypted := chaCipher.Seal(nil, nonce, msg, nil)
 	res := make([]byte, maxPayloadSize)
 
-	// Place the size of the payload (byte-serialized) at the beginning of the
-	// ciphertext
+	// Place the size of the payload (byte-serialized) at the
+	// beginning of the ciphertext
 	payloadSize := len(encrypted) + nonceSize + len(pubKey)
 	binary.PutUvarint(res, uint64(payloadSize))
 
@@ -85,9 +89,10 @@ func (s *dmCipher) EncryptSelf(plaintext []byte, myPrivateKey nike.PrivateKey,
 	offset = offset + len(pubKey)
 	copy(res[offset:], encrypted)
 
-	// Fill the rest of the ciphertext with padding. This simulates the Noise
-	// protocol.
-	count, err = csprng.NewSystemRNG().Read(res[payloadSize+lengthOfOverhead:])
+	// Fill the rest of the ciphertext with padding. This
+	// simulates the Noise protocol.
+	count, err = csprng.NewSystemRNG().Read(
+		res[payloadSize+lengthOfOverhead:])
 	panicOnError(err)
 	panicOnRngFailure(count, maxPayloadSize-(payloadSize+lengthOfOverhead))
 
@@ -97,9 +102,11 @@ func (s *dmCipher) EncryptSelf(plaintext []byte, myPrivateKey nike.PrivateKey,
 // DecryptSelf will decrypt the passed ciphertext. This will check if the
 // ciphertext is expected using IsSelfEncrypted.
 func (s *dmCipher) DecryptSelf(ciphertext []byte,
-	myPrivateKey nike.PrivateKey) ([]byte, error) {
+	myPrivateKey nike.PrivateKey) (partnerStaticPubKey nike.PublicKey,
+	plaintext []byte, err error) {
 	if !s.IsSelfEncrypted(ciphertext, myPrivateKey) {
-		return nil, errors.New("Could not confirm that data is self-encrypted")
+		return nil, nil, errors.New(
+			"Could not confirm that data is self-encrypted")
 	}
 
 	// Pull nonce from ciphertext
@@ -118,19 +125,28 @@ func (s *dmCipher) DecryptSelf(ciphertext []byte,
 	encrypted := ciphertext[offset : encryptedSize+lengthOfOverhead]
 
 	// Construct key for decryption
-	chaKey := constructSelfChaKey(myPrivateKey.Bytes(), receivedPubKey, nonce)
+	chaKey := constructSelfChaKey(myPrivateKey.Bytes(), receivedPubKey,
+		nonce)
 
 	// Construct cipher
 	chaCipher, err := chacha20poly1305.NewX(chaKey[:])
 	panicOnChaChaFailure(err)
 
 	// Decrypt ciphertext
-	plaintext, err := chaCipher.Open(nil, nonce, encrypted, nil)
+	msg, err := chaCipher.Open(nil, nonce, encrypted, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return plaintext, nil
+	pubKey := ecdh.ECDHNIKE.NewEmptyPublicKey()
+	pubKeySize := ecdh.ECDHNIKE.PublicKeySize()
+	err = pubKey.FromBytes(msg[:pubKeySize])
+	if err != nil {
+		return nil, nil, err
+	}
+	plaintext = msg[pubKeySize:]
+
+	return pubKey, plaintext, nil
 }
 
 // constructSelfChaKey is a helper function which generates the key

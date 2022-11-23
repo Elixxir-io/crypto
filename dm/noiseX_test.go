@@ -118,7 +118,7 @@ func TestCrossingWires(t *testing.T) {
 
 	ciphertext := Cipher.Encrypt(message1, alicePrivKey, bobPubKey, 10000)
 
-	_, err := Cipher.DecryptSelf(ciphertext, bobPrivKey)
+	_, _, err := Cipher.DecryptSelf(ciphertext, bobPrivKey)
 	if err == nil {
 		t.Fatalf("DecryptSelf should fail when passed ciphertext from encrypt.")
 	}
