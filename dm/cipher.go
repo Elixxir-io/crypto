@@ -85,14 +85,15 @@ func (s *dmCipher) Encrypt(plaintext []byte,
 
 	k := senderStaticPrivKey.DeriveSecret(partnerStaticPubKey)
 	bengerCode := makeBengerCode(k, plaintext)
-	pubKeyBytes := partnerStaticPubKey.Bytes()
+	senderPubKey := ecdh.ECDHNIKE.DerivePublicKey(senderStaticPrivKey)
+	senderPubKeyBytes := senderPubKey.Bytes()
 
 	payloadSize := maxCiphertextSize - s.CiphertextOverhead()
 
 	// Format: PubKey | bengerCode | msg
 	msg := make([]byte, payloadSize)
-	copy(msg, pubKeyBytes)
-	offset := len(pubKeyBytes)
+	copy(msg, senderPubKeyBytes)
+	offset := len(senderPubKeyBytes)
 	copy(msg[offset:], bengerCode)
 	offset += len(bengerCode)
 	copy(msg[offset:offset+len(plaintext)], plaintext)
