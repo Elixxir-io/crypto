@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"gitlab.com/xx_network/crypto/csprng"
 )
 
 func TestFromEdwards(t *testing.T) {
@@ -26,7 +27,9 @@ func TestFromEdwards(t *testing.T) {
 	alicePrivateKey.(*PrivateKey).FromEdwards(edprivKey)
 	alicePublicKey.(*PublicKey).FromEdwards(edpubKey)
 
-	bobPrivateKey, bobPublicKey := ECDHNIKE.NewKeypair()
+	rng := csprng.NewSystemRNG()
+
+	bobPrivateKey, bobPublicKey := ECDHNIKE.NewKeypair(rng)
 
 	secret1 := alicePrivateKey.DeriveSecret(bobPublicKey)
 	secret2 := bobPrivateKey.DeriveSecret(alicePublicKey)
@@ -35,8 +38,10 @@ func TestFromEdwards(t *testing.T) {
 }
 
 func TestNike(t *testing.T) {
-	alicePrivateKey, alicePublicKey := ECDHNIKE.NewKeypair()
-	bobPrivateKey, bobPublicKey := ECDHNIKE.NewKeypair()
+
+	rng := csprng.NewSystemRNG()
+	alicePrivateKey, alicePublicKey := ECDHNIKE.NewKeypair(rng)
+	bobPrivateKey, bobPublicKey := ECDHNIKE.NewKeypair(rng)
 
 	secret1 := alicePrivateKey.DeriveSecret(bobPublicKey)
 	secret2 := bobPrivateKey.DeriveSecret(alicePublicKey)
@@ -45,10 +50,11 @@ func TestNike(t *testing.T) {
 }
 
 func TestPrivateKeyMarshaling(t *testing.T) {
-	alicePrivateKey, _ := ECDHNIKE.NewKeypair()
+	rng := csprng.NewSystemRNG()
+	alicePrivateKey, _ := ECDHNIKE.NewKeypair(rng)
 
 	alicePrivateKeyBytes := alicePrivateKey.Bytes()
-	alice2PrivateKey, _ := ECDHNIKE.NewKeypair()
+	alice2PrivateKey, _ := ECDHNIKE.NewKeypair(rng)
 
 	err := alice2PrivateKey.FromBytes(alicePrivateKeyBytes)
 	require.NoError(t, err)
@@ -67,10 +73,12 @@ func TestPrivateKeyMarshaling(t *testing.T) {
 }
 
 func TestPublicKeyMarshaling(t *testing.T) {
-	_, alicePublicKey := ECDHNIKE.NewKeypair()
+	rng := csprng.NewSystemRNG()
+
+	_, alicePublicKey := ECDHNIKE.NewKeypair(rng)
 
 	alicePublicKeyBytes := alicePublicKey.Bytes()
-	_, alice2PublicKey := ECDHNIKE.NewKeypair()
+	_, alice2PublicKey := ECDHNIKE.NewKeypair(rng)
 
 	err := alice2PublicKey.FromBytes(alicePublicKeyBytes)
 	require.NoError(t, err)
@@ -89,7 +97,8 @@ func TestPublicKeyMarshaling(t *testing.T) {
 }
 
 func TestPrivateKey_Reset(t *testing.T) {
-	alicePrivateKey, _ := ECDHNIKE.NewKeypair()
+	rng := csprng.NewSystemRNG()
+	alicePrivateKey, _ := ECDHNIKE.NewKeypair(rng)
 
 	alicePrivateKey.Reset()
 
@@ -102,7 +111,8 @@ func TestPrivateKey_Reset(t *testing.T) {
 }
 
 func TestPublicKey_Reset(t *testing.T) {
-	_, alicePublicKey := ECDHNIKE.NewKeypair()
+	rng := csprng.NewSystemRNG()
+	_, alicePublicKey := ECDHNIKE.NewKeypair(rng)
 
 	alicePublicKey.Reset()
 
@@ -116,7 +126,8 @@ func TestPublicKey_Reset(t *testing.T) {
 }
 
 func TestPrivateKey_Scheme(t *testing.T) {
-	alicePrivKey, _ := ECDHNIKE.NewKeypair()
+	rng := csprng.NewSystemRNG()
+	alicePrivKey, _ := ECDHNIKE.NewKeypair(rng)
 
 	if !reflect.DeepEqual(alicePrivKey.Scheme(), ECDHNIKE) {
 		t.Fatalf("GetScheme failed to retrieve expected value")
@@ -125,7 +136,8 @@ func TestPrivateKey_Scheme(t *testing.T) {
 }
 
 func TestPublicKey_Scheme(t *testing.T) {
-	_, alicePubKey := ECDHNIKE.NewKeypair()
+	rng := csprng.NewSystemRNG()
+	_, alicePubKey := ECDHNIKE.NewKeypair(rng)
 
 	if !reflect.DeepEqual(alicePubKey.Scheme(), ECDHNIKE) {
 		t.Fatalf("GetScheme failed to retrieve expected value")

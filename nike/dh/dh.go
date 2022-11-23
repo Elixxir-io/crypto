@@ -8,10 +8,10 @@ package dh
 
 import (
 	"errors"
+	"io"
 
 	"gitlab.com/elixxir/crypto/nike"
 
-	"gitlab.com/xx_network/crypto/csprng"
 	"gitlab.com/xx_network/crypto/large"
 
 	"gitlab.com/elixxir/crypto/cyclic"
@@ -94,8 +94,7 @@ func (d *dhNIKE) group() *cyclic.Group {
 	return cyclic.NewGroup(p, g)
 }
 
-func (d *dhNIKE) NewKeypair() (nike.PrivateKey, nike.PublicKey) {
-	rng := csprng.NewSystemRNG()
+func (d *dhNIKE) NewKeypair(rng io.Reader) (nike.PrivateKey, nike.PublicKey) {
 	group := d.group()
 	privKey := diffieHellman.GeneratePrivateKey(privateKeySize, group, rng)
 	pubKey := diffieHellman.GeneratePublicKey(privKey, group)

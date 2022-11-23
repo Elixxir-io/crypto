@@ -20,6 +20,7 @@ package dm
 
 import (
 	"crypto/hmac"
+	"io"
 
 	"github.com/pkg/errors"
 	jww "github.com/spf13/jwalterweatherman"
@@ -45,6 +46,7 @@ type DMCipher interface {
 	Encrypt(plaintext []byte,
 		senderStaticPrivKey nike.PrivateKey,
 		partnerStaticPubKey nike.PublicKey,
+		rng io.Reader,
 		maxPayloadSize int) (ciphertext []byte)
 
 	// Decrypt decrypts the given ciphertext encrypted as a Direct
@@ -83,6 +85,7 @@ func (s *dmCipher) CiphertextOverhead() int {
 func (s *dmCipher) Encrypt(plaintext []byte,
 	senderStaticPrivKey nike.PrivateKey,
 	partnerStaticPubKey nike.PublicKey,
+	rng io.Reader,
 	maxCiphertextSize int) (ciphertext []byte) {
 
 	k := senderStaticPrivKey.DeriveSecret(partnerStaticPubKey)
@@ -100,7 +103,7 @@ func (s *dmCipher) Encrypt(plaintext []byte,
 	offset += len(bengerCode)
 	copy(msg[offset:offset+len(plaintext)], plaintext)
 
-	return NoiseX.Encrypt(msg, partnerStaticPubKey, maxCiphertextSize)
+	return NoiseX.Encrypt(msg, partnerStaticPubKey, rng, maxCiphertextSize)
 }
 
 // Decrypt decrypts the given ciphertext encrypted as a Direct

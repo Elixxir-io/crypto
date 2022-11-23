@@ -8,6 +8,7 @@ package dm
 
 import (
 	"fmt"
+
 	jww "github.com/spf13/jwalterweatherman"
 	"gitlab.com/yawning/nyquist.git"
 )
@@ -34,7 +35,7 @@ func handleErrorOnNoise(hs *nyquist.HandshakeState, err error) {
 // the coverage hit by un-testable error conditions.
 func panicOnError(err error) {
 	if err != nil {
-		jww.FATAL.Panic(err)
+		jww.FATAL.Panicf("%+v", err)
 	}
 }
 

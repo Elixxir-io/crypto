@@ -6,6 +6,8 @@
 
 package nike
 
+import "io"
+
 // Key is an interface for types encapsulating key material.
 type Key interface {
 
@@ -46,7 +48,7 @@ type Nike interface {
 	PrivateKeySize() int
 
 	// NewKeypair returns a newly generated key pair.
-	NewKeypair() (PrivateKey, PublicKey)
+	NewKeypair(rng io.Reader) (PrivateKey, PublicKey)
 
 	// UnmarshalBinaryPublicKey unmarshals the public key bytes.
 	UnmarshalBinaryPublicKey(b []byte) (PublicKey, error)

@@ -11,13 +11,15 @@ import (
 	"testing"
 
 	"gitlab.com/elixxir/crypto/nike/ecdh"
+	"gitlab.com/xx_network/crypto/csprng"
 )
 
 func TestScheme_EncryptSelf(t *testing.T) {
 	message1 := []byte("i am a message")
+	rng := csprng.NewSystemRNG()
 
-	_, alicePubKey := ecdh.ECDHNIKE.NewKeypair()
-	bobPrivKey, _ := ecdh.ECDHNIKE.NewKeypair()
+	_, alicePubKey := ecdh.ECDHNIKE.NewKeypair(rng)
+	bobPrivKey, _ := ecdh.ECDHNIKE.NewKeypair(rng)
 
 	ciphertext, err := Cipher.EncryptSelf(message1, bobPrivKey,
 		alicePubKey, 1024)

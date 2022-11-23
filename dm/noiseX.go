@@ -9,6 +9,7 @@ package dm
 
 import (
 	"encoding/binary"
+	"io"
 
 	"gitlab.com/elixxir/crypto/nike"
 	"gitlab.com/elixxir/crypto/nike/ecdh"
@@ -48,8 +49,13 @@ type NoiseCipher interface {
 	CiphertextOverhead() int
 
 	// Encrypt encrypts the given plaintext as a Noise X message.
+	// - plaintext: The message to Encrypt
+	// - partnerStaticPubKey: The public key of the target of the message
+	// - rng: a cryptographically secure pseudo random number generator
+	// - maxPayloadSize: the size of the ciphertext to be returned
 	Encrypt(plaintext []byte,
 		partnerStaticPubKey nike.PublicKey,
+		rng io.Reader,
 		maxPayloadSize int) []byte
 
 	// Decrypt decrypts the given ciphertext as a Noise X message.
@@ -66,9 +72,9 @@ func (s *noiseX) CiphertextOverhead() int {
 
 // Encrypt encrypts the given plaintext as a Noise X message.
 func (s *noiseX) Encrypt(plaintext []byte,
-	partnerStaticPubKey nike.PublicKey,
+	partnerStaticPubKey nike.PublicKey, rng io.Reader,
 	maxPayloadSize int) []byte {
-	ecdhPrivate, ecdhPublic := ecdh.ECDHNIKE.NewKeypair()
+	ecdhPrivate, ecdhPublic := ecdh.ECDHNIKE.NewKeypair(rng)
 
 	privKey := privateToNyquist(ecdhPrivate)
 	theirPubKey := publicToNyquist(partnerStaticPubKey)
@@ -89,7 +95,8 @@ func (s *noiseX) Encrypt(plaintext []byte,
 }
 
 // Decrypt decrypts the given ciphertext as a Noise X message.
-func (s *noiseX) Decrypt(ciphertext []byte, myStatic nike.PrivateKey) ([]byte, error) {
+func (s *noiseX) Decrypt(ciphertext []byte, myStatic nike.PrivateKey) (
+	[]byte, error) {
 
 	encrypted, partnerStaticPubKey, err := parseCiphertext(ciphertext)
 	if err != nil {

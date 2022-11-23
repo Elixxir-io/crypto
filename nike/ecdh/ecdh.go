@@ -12,13 +12,12 @@ import (
 	"crypto/ed25519"
 	"crypto/sha512"
 	"errors"
+	"io"
 	"runtime"
 
 	"filippo.io/edwards25519"
 	jww "github.com/spf13/jwalterweatherman"
 	"golang.org/x/crypto/curve25519"
-
-	"gitlab.com/xx_network/crypto/csprng"
 
 	"gitlab.com/elixxir/crypto/nike"
 )
@@ -34,22 +33,24 @@ var _ nike.PublicKey = (*PublicKey)(nil)
 var _ nike.Nike = (*ecdhNIKE)(nil)
 
 func (d *ecdhNIKE) PublicKeySize() int {
-	return curve25519.PointSize
+	return ed25519.PublicKeySize
 }
 
 func (d *ecdhNIKE) PrivateKeySize() int {
-	return curve25519.ScalarSize
+	return ed25519.PrivateKeySize
 }
 
 func (d *ecdhNIKE) NewEmptyPrivateKey() nike.PrivateKey {
 	return &PrivateKey{
-		privateKey: []byte{},
+		edwards:    ed25519.PrivateKey{},
+		privateKey: nil,
 	}
 }
 
 func (d *ecdhNIKE) NewEmptyPublicKey() nike.PublicKey {
 	return &PublicKey{
-		publicKey: []byte{},
+		edwards:   ed25519.PublicKey{},
+		publicKey: nil,
 	}
 }
 
@@ -71,35 +72,30 @@ func (d *ecdhNIKE) UnmarshalBinaryPrivateKey(b []byte) (nike.PrivateKey, error) 
 	return privKey, nil
 }
 
-func (d *ecdhNIKE) NewKeypair() (nike.PrivateKey, nike.PublicKey) {
-	rng := csprng.NewSystemRNG()
-	privKey := make([]byte, d.PrivateKeySize())
-	count, err := rng.Read(privKey)
-	panicOnError(err)
-	if count != d.PrivateKeySize() {
-		jww.FATAL.Panic("rng failure")
+func (d *ecdhNIKE) NewKeypair(rng io.Reader) (nike.PrivateKey, nike.PublicKey) {
+	pubEdwards, privEdwards, err := ed25519.GenerateKey(rng)
+	if err != nil {
+		jww.FATAL.Panicf("rng failure: %+v", err)
 	}
 
-	pubKey, err := curve25519.X25519(privKey, curve25519.Basepoint)
-	panicOnError(err)
+	priv := &PrivateKey{}
+	priv.FromEdwards(privEdwards)
+	pub := &PublicKey{}
+	pub.FromEdwards(pubEdwards)
 
-	return &PrivateKey{
-			privateKey: privKey,
-		}, &PublicKey{
-			publicKey: pubKey,
-		}
+	return priv, pub
 }
 
 func (d *ecdhNIKE) DerivePublicKey(privKey nike.PrivateKey) nike.PublicKey {
-	pubKey, err := curve25519.X25519(privKey.(*PrivateKey).privateKey, curve25519.Basepoint)
-	panicOnError(err)
-	return &PublicKey{
-		publicKey: pubKey,
-	}
+	pubEdwards := privKey.(*PrivateKey).edwards.Public().(ed25519.PublicKey)
+	pubKey := &PublicKey{}
+	pubKey.FromEdwards(pubEdwards)
+	return pubKey
 }
 
 // PrivateKey is an implementation of the nike.PrivateKey interface.
 type PrivateKey struct {
+	edwards    ed25519.PrivateKey
 	privateKey []byte
 }
 
@@ -108,13 +104,7 @@ func (p *PrivateKey) Scheme() nike.Nike {
 }
 
 func (p *PrivateKey) DerivePublicKey() nike.PublicKey {
-	pubKey, err := curve25519.X25519(p.privateKey, curve25519.Basepoint)
-	if err != nil {
-		jww.FATAL.Panic(err)
-	}
-	return &PublicKey{
-		publicKey: pubKey,
-	}
+	return ECDHNIKE.DerivePublicKey(p)
 }
 
 func (p *PrivateKey) DeriveSecret(pubKey nike.PublicKey) []byte {
@@ -126,37 +116,51 @@ func (p *PrivateKey) DeriveSecret(pubKey nike.PublicKey) []byte {
 
 //go:noinline
 func (p *PrivateKey) Reset() {
+	for i := 0; i < len(p.edwards); i++ {
+		p.edwards[i] = 0
+	}
 	for i := 0; i < len(p.privateKey); i++ {
 		p.privateKey[i] = 0
 	}
+	runtime.KeepAlive(p.edwards)
 	runtime.KeepAlive(p.privateKey)
 }
 
 func (p *PrivateKey) Bytes() []byte {
-	return p.privateKey
+	res := make([]byte, ECDHNIKE.PrivateKeySize())
+	copy(res, p.edwards)
+	return res
+}
+
+func (p *PrivateKey) MontgomeryBytes() []byte {
+	res := make([]byte, len(p.privateKey))
+	copy(res, p.privateKey)
+	return res
 }
 
 func (p *PrivateKey) FromBytes(data []byte) error {
 	if len(data) != ECDHNIKE.PrivateKeySize() {
 		return errors.New("invalid key size")
 	}
-	p.privateKey = data
+	edwards := ed25519.PrivateKey(data)
+	p.FromEdwards(edwards)
 	return nil
 }
 
 // FromEdwards implements the edwards to montgomery
 // conversion as specified in https://www.rfc-editor.org/rfc/rfc8032#section-5.1.5
 func (p *PrivateKey) FromEdwards(privateKey ed25519.PrivateKey) {
+	p.edwards = privateKey
 	dhBytes := sha512.Sum512(privateKey[:32])
 	dhBytes[0] &= 248
 	dhBytes[31] &= 127
 	dhBytes[31] |= 64
-	err := p.FromBytes(dhBytes[:32])
-	panicOnError(err)
+	p.privateKey = dhBytes[:32]
 }
 
 // PublicKey is an implementation of the nike.PublicKey interface.
 type PublicKey struct {
+	edwards   ed25519.PublicKey
 	publicKey []byte
 }
 
@@ -166,6 +170,10 @@ func (p *PublicKey) Scheme() nike.Nike {
 
 //go:noinline
 func (p *PublicKey) Reset() {
+	for i := 0; i < len(p.edwards); i++ {
+		p.edwards[i] = 0
+	}
+	runtime.KeepAlive(p.edwards)
 	for i := 0; i < len(p.publicKey); i++ {
 		p.publicKey[i] = 0
 	}
@@ -173,14 +181,23 @@ func (p *PublicKey) Reset() {
 }
 
 func (p *PublicKey) Bytes() []byte {
-	return p.publicKey
+	res := make([]byte, ECDHNIKE.PublicKeySize())
+	copy(res, p.edwards)
+	return res
+}
+
+func (p *PublicKey) MontgomeryBytes() []byte {
+	res := make([]byte, len(p.publicKey))
+	copy(res, p.publicKey)
+	return res
 }
 
 func (p *PublicKey) FromBytes(data []byte) error {
 	if len(data) != ECDHNIKE.PublicKeySize() {
 		return errors.New("invalid key size")
 	}
-	p.publicKey = data
+	edwards := ed25519.PublicKey(data)
+	p.FromEdwards(edwards)
 	return nil
 }
 
@@ -188,8 +205,9 @@ func (p *PublicKey) FromBytes(data []byte) error {
 // Per RFC 7748, EDDSA Public keys can be trivially
 // converted (https://www.rfc-editor.org/rfc/rfc7748.html#page-14)
 func (p *PublicKey) FromEdwards(publicKey ed25519.PublicKey) {
+	p.edwards = publicKey
 	ed_pub, _ := new(edwards25519.Point).SetBytes(publicKey)
-	p.FromBytes(ed_pub.BytesMontgomery())
+	p.publicKey = ed_pub.BytesMontgomery()
 }
 
 // panicOnError is a helper function which will panic if the

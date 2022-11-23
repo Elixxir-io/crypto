@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gitlab.com/elixxir/crypto/nike"
 	"gitlab.com/elixxir/crypto/nike/ecdh"
+	"gitlab.com/xx_network/crypto/csprng"
 	"gitlab.com/yawning/nyquist.git"
 	"gitlab.com/yawning/nyquist.git/cipher"
 	"gitlab.com/yawning/nyquist.git/dh"
@@ -112,11 +113,13 @@ func TestNoise(t *testing.T) {
 // DecryptSelf will fail to decrypt it.
 func TestCrossingWires(t *testing.T) {
 	message1 := []byte("i am a message")
+	rng := csprng.NewSystemRNG()
 
-	alicePrivKey, _ := ecdh.ECDHNIKE.NewKeypair()
-	bobPrivKey, bobPubKey := ecdh.ECDHNIKE.NewKeypair()
+	alicePrivKey, _ := ecdh.ECDHNIKE.NewKeypair(rng)
+	bobPrivKey, bobPubKey := ecdh.ECDHNIKE.NewKeypair(rng)
 
-	ciphertext := Cipher.Encrypt(message1, alicePrivKey, bobPubKey, 10000)
+	ciphertext := Cipher.Encrypt(message1, alicePrivKey, bobPubKey, rng,
+		10000)
 
 	_, _, err := Cipher.DecryptSelf(ciphertext, bobPrivKey)
 	if err == nil {
@@ -127,14 +130,15 @@ func TestCrossingWires(t *testing.T) {
 
 func TestNoisEncryptDecrypt(t *testing.T) {
 	message1 := []byte("i am a message")
+	rng := csprng.NewSystemRNG()
 
 	//alicePrivKey, _ := ecdh.ECDHNIKE.NewKeypair()
-	bobPrivKey, bobPubKey := ecdh.ECDHNIKE.NewKeypair()
+	bobPrivKey, bobPubKey := ecdh.ECDHNIKE.NewKeypair(rng)
 
 	noiseCipher := &noiseX{}
 
 	ciphertext := noiseCipher.Encrypt(message1, bobPubKey,
-		10000)
+		rng, 10000)
 
 	message2, err := noiseCipher.Decrypt(ciphertext,
 		bobPrivKey)
