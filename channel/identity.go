@@ -27,6 +27,11 @@ type Identity struct {
 	codename.Identity
 }
 
+// GetIdentity returns a channel identity object from the PrivateIdentity
+func (pi *PrivateIdentity) GetIdentity() Identity {
+	return Identity{pi.Identity}
+}
+
 // GenerateIdentity create a new channels identity from scratch and assigns
 // it a codename
 func GenerateIdentity(rng io.Reader) (PrivateIdentity, error) {
@@ -46,4 +51,10 @@ func ConstructIdentity(pub ed25519.PublicKey, codesetVersion uint8) (Identity,
 func UnmarshalIdentity(data []byte) (Identity, error) {
 	id, err := codename.UnmarshalIdentity(data)
 	return Identity{id}, err
+}
+
+// UnmarshalPrivateIdentity creates a private identity from a marshaled version
+func UnmarshalPrivateIdentity(data []byte) (PrivateIdentity, error) {
+	id, err := codename.UnmarshalPrivateIdentity(data)
+	return PrivateIdentity{id}, err
 }
