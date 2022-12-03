@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
+	jww "github.com/spf13/jwalterweatherman"
+	"gitlab.com/elixxir/crypto/hash"
 	"golang.org/x/crypto/blake2b"
 )
 
@@ -37,6 +39,13 @@ type PrivateIdentity struct {
 // Marshal creates en exportable version of the PrivateIdentity.
 func (i PrivateIdentity) Marshal() []byte {
 	return append([]byte{i.CodesetVersion}, append(*i.Privkey, i.PubKey...)...)
+}
+
+// GetDMToken returns the DM Token for this codename identity.
+// TODO: This is not yet stored in the data model, which is why it is
+// computed here and accessed through this function.
+func (i PrivateIdentity) GetDMToken() []byte {
+	return hashPrivateKey(i.Privkey)
 }
 
 // UnmarshalPrivateIdentity created a private identity from a marshaled version
@@ -176,4 +185,16 @@ func UnmarshalIdentity(data []byte) (Identity, error) {
 	pubkey := ed25519.PublicKey(data[1:])
 
 	return ConstructIdentity(pubkey, version)
+}
+
+// hashPrivateKey is a helper function which generates a DM token.
+// As per spec, this is just a hash of the private key.
+func hashPrivateKey(privKey *ed25519.PrivateKey) []byte {
+	h, err := hash.NewCMixHash()
+	if err != nil {
+		jww.FATAL.Panicf("Failed to generate cMix hash: %+v", err)
+	}
+
+	h.Write(privKey.Seed())
+	return h.Sum(nil)
 }
