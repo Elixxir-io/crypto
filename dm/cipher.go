@@ -20,6 +20,7 @@ package dm
 
 import (
 	"crypto/hmac"
+	"encoding/binary"
 	"io"
 
 	"github.com/pkg/errors"
@@ -31,6 +32,7 @@ import (
 
 const (
 	bengerCodeSize = 16
+	prologueSize   = 2
 )
 
 var (
@@ -75,8 +77,8 @@ type DMCipher interface {
 type dmCipher struct{}
 
 func (s *dmCipher) CiphertextOverhead() int {
-	return (ciphertextOverhead + ecdh.ECDHNIKE.PublicKeySize() +
-		bengerCodeSize)
+	return (NoiseX.CiphertextOverhead() + ecdh.ECDHNIKE.PublicKeySize() +
+		bengerCodeSize + prologueSize)
 }
 
 // Encrypt encrypts the given plaintext as an encrypted Direct message.
@@ -88,22 +90,29 @@ func (s *dmCipher) Encrypt(plaintext []byte,
 	rng io.Reader,
 	maxCiphertextSize int) (ciphertext []byte) {
 
+	if len(plaintext)+s.CiphertextOverhead() > maxCiphertextSize {
+		jww.FATAL.Panicf("plaintext too large")
+	}
+
 	k := senderStaticPrivKey.DeriveSecret(partnerStaticPubKey)
 	bengerCode := makeBengerCode(k, plaintext)
 	senderPubKey := ecdh.ECDHNIKE.DerivePublicKey(senderStaticPrivKey)
 	senderPubKeyBytes := senderPubKey.Bytes()
 
-	payloadSize := maxCiphertextSize - s.CiphertextOverhead()
+	payloadSize := maxCiphertextSize - NoiseX.CiphertextOverhead()
 
-	// Format: PubKey | bengerCode | msg
+	// Format: PubKey | bengerCode | len(msg) | msg
 	msg := make([]byte, payloadSize)
 	copy(msg, senderPubKeyBytes)
 	offset := len(senderPubKeyBytes)
 	copy(msg[offset:], bengerCode)
 	offset += len(bengerCode)
+	binary.BigEndian.PutUint16(msg[offset:offset+prologueSize],
+		uint16(len(plaintext)))
+	offset += prologueSize
 	copy(msg[offset:offset+len(plaintext)], plaintext)
 
-	return NoiseX.Encrypt(msg, partnerStaticPubKey, rng, maxCiphertextSize)
+	return NoiseX.Encrypt(msg, partnerStaticPubKey, rng)
 }
 
 // Decrypt decrypts the given ciphertext encrypted as a Direct
@@ -126,8 +135,15 @@ func (s *dmCipher) Decrypt(ciphertext []byte,
 		return nil, nil, err
 	}
 
-	readBengerCode := msg[pubSize : pubSize+bengerCodeSize]
-	plaintext = msg[pubSize+bengerCodeSize:]
+	offset := pubSize
+	readBengerCode := msg[offset : offset+bengerCodeSize]
+	offset += bengerCodeSize
+
+	readMsgSize := binary.BigEndian.Uint16(
+		msg[offset : offset+prologueSize])
+	offset += prologueSize
+
+	plaintext = msg[offset : offset+int(readMsgSize)]
 
 	k := receiverStaticPrivKey.DeriveSecret(pubKey)
 	derivBengerCode := makeBengerCode(k, plaintext)
