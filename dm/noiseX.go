@@ -48,7 +48,8 @@ type NoiseCipher interface {
 type noiseX struct{}
 
 func (s *noiseX) CiphertextOverhead() int {
-	return ciphertextOverhead
+	// Noise overhead + prepended ephemeral public key
+	return ciphertextOverhead + ecdh.ECDHNIKE.PublicKeySize()
 }
 
 // Encrypt encrypts the given plaintext as a Noise X message.

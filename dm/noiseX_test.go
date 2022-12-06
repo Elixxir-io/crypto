@@ -138,7 +138,7 @@ func TestNoisEncryptDecrypt(t *testing.T) {
 	noiseCipher := &noiseX{}
 
 	ciphertext := noiseCipher.Encrypt(message1, bobPubKey,
-		rng, 10000)
+		rng)
 
 	message2, err := noiseCipher.Decrypt(ciphertext,
 		bobPrivKey)

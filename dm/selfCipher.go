@@ -18,6 +18,20 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
+const (
+	// lengthOfOverhead is the reserved bytes used to indicate the
+	// serialized length of the payload within a ciphertext.
+	lengthOfOverhead = 2
+
+	// pubKeySize is the size of the facsimile public key used for self
+	// encryption/decryption.
+	pubKeySize = blake2b.Size256
+
+	// nonceSize is the size of the nonce used for the encryption
+	// algorithm used for self encryption/decryption.
+	nonceSize = chacha20poly1305.NonceSizeX
+)
+
 // IsSelfEncrypted will return whether the ciphertext provided has been
 // encrypted by the owner of the passed in private key. Returns true
 // if the ciphertext has been encrypted by the user.
