@@ -13,7 +13,6 @@ import (
 
 	"gitlab.com/elixxir/crypto/nike"
 	"gitlab.com/elixxir/crypto/nike/ecdh"
-	"gitlab.com/xx_network/crypto/csprng"
 	"gitlab.com/yawning/nyquist.git"
 	"golang.org/x/crypto/blake2b"
 	"golang.org/x/crypto/chacha20poly1305"
@@ -91,7 +90,7 @@ func (s *noiseX) Encrypt(plaintext []byte,
 	defer hs.Reset()
 	ciphertext, err := hs.WriteMessage(nil, plaintext)
 	handleErrorOnNoise(hs, err)
-	return ciphertextToNoise(ciphertext, ecdhPublic, maxPayloadSize)
+	return ciphertextToNoise(ciphertext, ecdhPublic, rng, maxPayloadSize)
 }
 
 // Decrypt decrypts the given ciphertext as a Noise X message.
@@ -155,11 +154,13 @@ func parseCiphertext(ciphertext []byte) ([]byte, nike.PublicKey, error) {
 // be formatted as such:
 // Length of Payload | Public Key | Ciphertext | Random Data
 func ciphertextToNoise(ciphertext []byte,
-	ecdhPublic nike.PublicKey, maxPayloadSize int) []byte {
+	ecdhPublic nike.PublicKey, rng io.Reader,
+	maxPayloadSize int) []byte {
 	res := make([]byte, maxPayloadSize)
 
 	lengthOfPublicKey := len(ecdhPublic.Bytes())
-	actualPayloadSize := lengthOfPublicKey + len(ciphertext) + lengthOfOverhead
+	actualPayloadSize := (lengthOfPublicKey + len(ciphertext) +
+		lengthOfOverhead)
 
 	// Put at the start the length of the payload (ciphertext)
 	binary.PutUvarint(res, uint64(actualPayloadSize))
@@ -171,7 +172,6 @@ func ciphertextToNoise(ciphertext []byte,
 	copy(res[lengthOfOverhead+lengthOfPublicKey:], ciphertext)
 
 	// Fill the rest of the context with random data
-	rng := csprng.NewSystemRNG()
 	count, err := rng.Read(res[actualPayloadSize:])
 	panicOnError(err)
 	panicOnRngFailure(count, maxPayloadSize-actualPayloadSize)
