@@ -35,11 +35,9 @@ type NoiseCipher interface {
 	// - plaintext: The message to Encrypt
 	// - partnerStaticPubKey: The public key of the target of the message
 	// - rng: a cryptographically secure pseudo random number generator
-	// - maxPayloadSize: the size of the ciphertext to be returned
 	Encrypt(plaintext []byte,
 		partnerStaticPubKey nike.PublicKey,
-		rng io.Reader,
-		maxPayloadSize int) []byte
+		rng io.Reader) []byte
 
 	// Decrypt decrypts the given ciphertext as a Noise X message.
 	Decrypt(ciphertext []byte,
@@ -55,8 +53,7 @@ func (s *noiseX) CiphertextOverhead() int {
 
 // Encrypt encrypts the given plaintext as a Noise X message.
 func (s *noiseX) Encrypt(plaintext []byte,
-	partnerStaticPubKey nike.PublicKey, rng io.Reader,
-	maxPayloadSize int) []byte {
+	partnerStaticPubKey nike.PublicKey, rng io.Reader) []byte {
 	ecdhPrivate, ecdhPublic := ecdh.ECDHNIKE.NewKeypair(rng)
 
 	privKey := privateToNyquist(ecdhPrivate)
