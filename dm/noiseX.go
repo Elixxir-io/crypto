@@ -8,31 +8,15 @@
 package dm
 
 import (
-	"encoding/binary"
 	"io"
 
 	"gitlab.com/elixxir/crypto/nike"
 	"gitlab.com/elixxir/crypto/nike/ecdh"
 	"gitlab.com/yawning/nyquist.git"
-	"golang.org/x/crypto/blake2b"
-	"golang.org/x/crypto/chacha20poly1305"
 )
 
 const (
-	prologueSize       = 2
 	ciphertextOverhead = 96
-
-	// lengthOfOverhead is the reserved bytes used to indicate the
-	// serialized length of the payload within a ciphertext.
-	lengthOfOverhead = 2
-
-	// pubKeySize is the size of the facsimile public key used for self
-	// encryption/decryption.
-	pubKeySize = blake2b.Size256
-
-	// nonceSize is the size of the nonce used for the encryption
-	// algorithm used for self encryption/decryption.
-	nonceSize = chacha20poly1305.NonceSizeX
 )
 
 var (
@@ -90,20 +74,20 @@ func (s *noiseX) Encrypt(plaintext []byte,
 	defer hs.Reset()
 	ciphertext, err := hs.WriteMessage(nil, plaintext)
 	handleErrorOnNoise(hs, err)
-	return ciphertextToNoise(ciphertext, ecdhPublic, rng, maxPayloadSize)
+	return createNoisePayload(ciphertext, ecdhPublic, rng)
 }
 
 // Decrypt decrypts the given ciphertext as a Noise X message.
 func (s *noiseX) Decrypt(ciphertext []byte, myStatic nike.PrivateKey) (
 	[]byte, error) {
 
-	encrypted, partnerStaticPubKey, err := parseCiphertext(ciphertext)
+	encrypted, partnerEphemeralPubKey, err := parseNoisePayload(ciphertext)
 	if err != nil {
 		return nil, err
 	}
 
 	privKey := privateToNyquist(myStatic)
-	theirPubKey := publicToNyquist(partnerStaticPubKey)
+	theirPubKey := publicToNyquist(partnerEphemeralPubKey)
 
 	cfg := &nyquist.HandshakeConfig{
 		Protocol:     protocol,
@@ -125,15 +109,10 @@ func (s *noiseX) Decrypt(ciphertext []byte, myStatic nike.PrivateKey) (
 	return plaintext, nil
 }
 
-// parseCiphertext is a helper function which parses the ciphertext. This should
-// be the inverse of ciphertextToNoise, returning to the user
-// the encrypted data and the public key.
-func parseCiphertext(ciphertext []byte) ([]byte, nike.PublicKey, error) {
-	// Extract the payload from the ciphertext
-	lengthOfPayloadBytes := ciphertext[:lengthOfOverhead]
-	payloadSize, _ := binary.Uvarint(lengthOfPayloadBytes)
-	payload := ciphertext[lengthOfOverhead:payloadSize]
-
+// parseNoisePayload is a helper function which parses the
+// ciphertext. This should be the inverse of createNoisePayload,
+// returning to the user the encrypted data and the parsed public key.
+func parseNoisePayload(payload []byte) ([]byte, nike.PublicKey, error) {
 	// Extract the public key from the payload
 	publicKeySize := ecdh.ECDHNIKE.PublicKeySize()
 	publicKeyBytes := payload[:publicKeySize]
@@ -144,38 +123,23 @@ func parseCiphertext(ciphertext []byte) ([]byte, nike.PublicKey, error) {
 	}
 
 	// Extract encrypted data from payload
-	encrypted := payload[publicKeySize:]
+	ciphertext := payload[publicKeySize:]
 
-	return encrypted, publicKey, nil
+	return ciphertext, publicKey, nil
 }
 
-// ciphertextToNoise is a helper function which will take the ciphertext
+// createNoisePayload is a helper function which will take the ciphertext
 // and format it to fit Noise's specifications. The returned byte data should
 // be formatted as such:
-// Length of Payload | Public Key | Ciphertext | Random Data
-func ciphertextToNoise(ciphertext []byte,
-	ecdhPublic nike.PublicKey, rng io.Reader,
-	maxPayloadSize int) []byte {
-	res := make([]byte, maxPayloadSize)
+// Public Key | Ciphertext
+func createNoisePayload(ciphertext []byte,
+	ecdhPublic nike.PublicKey, rng io.Reader) []byte {
+	publicKeySize := len(ecdhPublic.Bytes())
+	ciphertextSize := len(ciphertext)
+	res := make([]byte, publicKeySize+ciphertextSize)
 
-	lengthOfPublicKey := len(ecdhPublic.Bytes())
-	actualPayloadSize := (lengthOfPublicKey + len(ciphertext) +
-		lengthOfOverhead)
-
-	// Put at the start the length of the payload (ciphertext)
-	binary.PutUvarint(res, uint64(actualPayloadSize))
-
-	// Put in the public key per the Noise spec
-	copy(res[lengthOfOverhead:], ecdhPublic.Bytes())
-
-	// Put in the cipher text
-	copy(res[lengthOfOverhead+lengthOfPublicKey:], ciphertext)
-
-	// Fill the rest of the context with random data
-	count, err := rng.Read(res[actualPayloadSize:])
-	panicOnError(err)
-	panicOnRngFailure(count, maxPayloadSize-actualPayloadSize)
-
+	copy(res[0:publicKeySize], ecdhPublic.Bytes())
+	copy(res[publicKeySize:], ciphertext)
 	return res
 }
 
