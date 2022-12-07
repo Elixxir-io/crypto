@@ -171,7 +171,7 @@ func TestRChanel_Marshal_Unmarshal(t *testing.T) {
 	}
 }
 
-func TestNewChannel_Verify(t *testing.T) {
+func TestChannel_Verify(t *testing.T) {
 	rng := csprng.NewSystemRNG()
 
 	name := "Asymmetric_channel"
