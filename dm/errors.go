@@ -13,10 +13,10 @@ import (
 	"gitlab.com/yawning/nyquist.git"
 )
 
-// handleErrorOnNoise is a helper function which will handle error on the
+// panicOnNoiseError is a helper function which will panice for errors on the
 // Noise protocol's Encrypt/Decrypt. This primarily serves as a fix for
 // the coverage hit by un-testable error conditions.
-func handleErrorOnNoise(hs *nyquist.HandshakeState, err error) {
+func panicOnNoiseError(hs *nyquist.HandshakeState, err error) {
 	switch err {
 	case nyquist.ErrDone:
 		status := hs.GetStatus()
@@ -26,6 +26,23 @@ func handleErrorOnNoise(hs *nyquist.HandshakeState, err error) {
 	case nil:
 	default:
 		jww.FATAL.Panic(err)
+	}
+
+}
+
+// recoverErrorOnNoise is a helper function which will handle error on the
+// Noise protocol's Encrypt/Decrypt. This primarily serves as a fix for
+// the coverage hit by un-testable error conditions.
+func recoverErrorOnNoise(hs *nyquist.HandshakeState, err error) error {
+	switch err {
+	case nyquist.ErrDone:
+		status := hs.GetStatus()
+		if status.Err != nyquist.ErrDone {
+			return status.Err
+		}
+	case nil:
+	default:
+		return err
 	}
 
 }
