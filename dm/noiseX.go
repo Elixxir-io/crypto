@@ -72,7 +72,7 @@ func (s *noiseX) Encrypt(plaintext []byte,
 	defer hs.Reset()
 	ciphertext, err := hs.WriteMessage(nil, plaintext)
 	handleErrorOnNoise(hs, err)
-	return createNoisePayload(ciphertext, ecdhPublic, rng)
+	return createNoisePayload(ciphertext, ecdhPublic)
 }
 
 // Decrypt decrypts the given ciphertext as a Noise X message.
@@ -130,8 +130,7 @@ func parseNoisePayload(payload []byte) ([]byte, nike.PublicKey, error) {
 // and format it to fit Noise's specifications. The returned byte data should
 // be formatted as such:
 // Public Key | Ciphertext
-func createNoisePayload(ciphertext []byte,
-	ecdhPublic nike.PublicKey, rng io.Reader) []byte {
+func createNoisePayload(ciphertext []byte, ecdhPublic nike.PublicKey) []byte {
 	publicKeySize := len(ecdhPublic.Bytes())
 	ciphertextSize := len(ciphertext)
 	res := make([]byte, publicKeySize+ciphertextSize)
