@@ -77,7 +77,7 @@ func (s *noiseX) Encrypt(plaintext []byte, partnerStaticPubKey nike.PublicKey,
 	panicOnError(err)
 	defer hs.Reset()
 	ciphertext, err := hs.WriteMessage(nil, plaintext)
-	handleErrorOnNoise(hs, err)
+	panicOnNoiseError(hs, err)
 	return createNoisePayload(ciphertext, ecdhPublic)
 }
 
@@ -108,9 +108,9 @@ func (s *noiseX) Decrypt(ciphertext []byte, myStatic nike.PrivateKey) (
 	defer hs.Reset()
 
 	plaintext, err := hs.ReadMessage(nil, encrypted)
-	handleErrorOnNoise(hs, err)
+	err = recoverErrorOnNoise(hs, err)
 
-	return plaintext, nil
+	return plaintext, err
 }
 
 // parseNoisePayload is a helper function which parses the
