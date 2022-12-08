@@ -20,6 +20,18 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
+const (
+	selfHMACSalt   = "sendSelfHMACSalt"
+	selfSecretSalt = "sendSelfSecretKeySalt"
+)
+
+var (
+	encryptedSelfOverhead = chacha20poly1305.Overhead +
+		chacha20poly1305.NonceSizeX + hash.DefaultHash().Size()
+	selfOverhead = (encryptedSelfOverhead + prologueSize +
+		ecdh.ECDHNIKE.PublicKeySize())
+)
+
 // IsSelfEncrypted will return whether the ciphertext provided has been
 // encrypted by the owner of the passed in private key. Returns true
 // if the ciphertext has been encrypted by the user.
@@ -32,7 +44,7 @@ func (s *dmCipher) IsSelfEncrypted(data []byte,
 		return false
 	}
 	key := deriveSelfSecretKey(esdm.nonce, myPrivateKey)
-	return checkHMAC(esdm.mac, esdm.ciphertext, key)
+	return checkHMAC(esdm.mac, esdm.nonce, esdm.ciphertext, key)
 }
 
 // EncryptSelf will encrypt the passed plaintext. This will simulate the
@@ -41,18 +53,14 @@ func (s *dmCipher) EncryptSelf(message []byte, myPrivateKey nike.PrivateKey,
 	partnerPublicKey nike.PublicKey,
 	maxPayloadSize int) ([]byte, error) {
 
-	encryptedOverhead := chacha20poly1305.Overhead +
-		chacha20poly1305.NonceSizeX + hash.DefaultHash().Size()
-	overhead := (encryptedOverhead + prologueSize +
-		ecdh.ECDHNIKE.PublicKeySize())
-	if len(message)+overhead > maxPayloadSize {
+	if len(message)+selfOverhead > maxPayloadSize {
 		return nil, errors.Errorf("message too big: %d > %d",
-			overhead, maxPayloadSize)
+			len(message)+selfOverhead, maxPayloadSize)
 	}
 
 	// sdm is the plaintext part of the packet, so it is the size
 	// of the payload less encryption overhead
-	sdm := newSelfDM(maxPayloadSize - encryptedOverhead)
+	sdm := newSelfDM(maxPayloadSize - encryptedSelfOverhead)
 	sdm.setMsg(message)
 	sdm.setPubKey(partnerPublicKey)
 
@@ -72,7 +80,7 @@ func (s *dmCipher) EncryptSelf(message []byte, myPrivateKey nike.PrivateKey,
 
 	esdm := newEncryptedSelfDM(maxPayloadSize)
 	esdm.setNonce(nonce)
-	esdm.setMAC(getSelfHMAC(key, ciphertext))
+	esdm.setMAC(getSelfHMAC(key, ciphertext, nonce))
 	esdm.setCiphertext(ciphertext)
 	return esdm.payload, nil
 }
@@ -91,7 +99,7 @@ func (s *dmCipher) DecryptSelf(ciphertext []byte,
 	}
 	key := deriveSelfSecretKey(esdm.nonce, myPrivateKey)
 
-	if !checkHMAC(esdm.mac, esdm.ciphertext, key) {
+	if !checkHMAC(esdm.mac, esdm.nonce, esdm.ciphertext, key) {
 		return nil, nil, errors.Errorf(
 			"failed hmac")
 
@@ -127,22 +135,25 @@ func (s *dmCipher) DecryptSelf(ciphertext []byte,
 // used for self encryption and decryption.
 func deriveSelfSecretKey(nonce []byte, privateKey nike.PrivateKey) []byte {
 	h := hash.DefaultHash()
+	h.Write([]byte(selfSecretSalt))
 	h.Write(nonce)
 	h.Write(privateKey.Bytes())
 	return h.Sum(nil)
 }
 
-func getSelfHMAC(key, msg []byte) []byte {
+func getSelfHMAC(key, msg, nonce []byte) []byte {
 	// Construct an additional hmac used to check if it's a self-encrypted
 	// msg (this is somewhat unnecessary due to poly1305, but we have the
 	// space in the packet).
 	mac := hmac.New(hash.DefaultHash, key)
+	mac.Write([]byte(selfHMACSalt))
+	mac.Write(nonce)
 	mac.Write(msg)
 	return mac.Sum(nil)
 }
 
-func checkHMAC(mac, ciphertext, key []byte) bool {
-	receivedMAC := getSelfHMAC(key, ciphertext)
+func checkHMAC(mac, nonce, ciphertext, key []byte) bool {
+	receivedMAC := getSelfHMAC(key, ciphertext, nonce)
 	return hmac.Equal(receivedMAC, mac)
 }
 
