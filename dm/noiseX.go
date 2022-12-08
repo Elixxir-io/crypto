@@ -52,9 +52,15 @@ func (s *noiseX) CiphertextOverhead() int {
 	return ciphertextOverhead + ecdh.ECDHNIKE.PublicKeySize()
 }
 
-// Encrypt encrypts the given plaintext as a Noise X message.
-func (s *noiseX) Encrypt(plaintext []byte,
-	partnerStaticPubKey nike.PublicKey, rng io.Reader) []byte {
+// Encrypt encrypts the given plaintext as a Noise X message. The
+// plaintext is encrypted using a key derived from an ephemerally
+// generated private key (ecdhPrivate) and the static public key of
+// the user (partnerStaticPubKey). A cryptographically secure random
+// number generator is required to creat this key.
+func (s *noiseX) Encrypt(plaintext []byte, partnerStaticPubKey nike.PublicKey,
+	rng io.Reader) []byte {
+	// Per spec, the X pattern in Noise relies on an ephemeral key. We
+	// generate that here and prepend the public form to the message.
 	ecdhPrivate, ecdhPublic := ecdh.ECDHNIKE.NewKeypair(rng)
 
 	privKey := privateToNyquist(ecdhPrivate)
