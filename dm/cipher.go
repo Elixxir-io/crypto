@@ -19,7 +19,6 @@ package dm
 // still send (spoof) messages as each other.
 
 import (
-	"crypto/hmac"
 	"encoding/binary"
 	"io"
 
@@ -27,7 +26,6 @@ import (
 	jww "github.com/spf13/jwalterweatherman"
 	"gitlab.com/elixxir/crypto/nike"
 	"gitlab.com/elixxir/crypto/nike/ecdh"
-	"golang.org/x/crypto/blake2b"
 )
 
 const (
@@ -146,25 +144,10 @@ func (s *dmCipher) Decrypt(ciphertext []byte,
 	plaintext = msg[offset : offset+int(readMsgSize)]
 
 	k := receiverStaticPrivKey.DeriveSecret(pubKey)
-	derivBengerCode := makeBengerCode(k, plaintext)
 
-	if !hmac.Equal(readBengerCode, derivBengerCode) {
+	if !isValidBengerCode(readBengerCode, k, plaintext) {
 		return nil, nil, errors.Errorf("[DM] failed benger mac check")
 	}
 
 	return pubKey, plaintext, nil
-}
-
-// makeBengerCode is a helper to create a simple keyed hash
-// This is the hash of a derived secret + message embedded in
-// a noise protocol message, which limits spoofed message sending
-// to the sender or receiver of the message.
-func makeBengerCode(key, msg []byte) []byte {
-	h, err := blake2b.New256(nil)
-	if err != nil {
-		jww.FATAL.Panicf("%+v", err)
-	}
-	h.Write(key)
-	r := h.Sum(msg)[:bengerCodeSize]
-	return r
 }
