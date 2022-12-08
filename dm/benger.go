@@ -29,10 +29,7 @@ func isValidBengerCode(readCode, key, msg []byte) bool {
 // a noise protocol message, which limits spoofed message sending
 // to the sender or receiver of the message.
 func makeBengerCode(key, msg []byte) []byte {
-	h, err := blake2b.New256(nil)
-	if err != nil {
-		jww.FATAL.Panicf("%+v", err)
-	}
+	h, _ := blake2b.New256(nil)
 	h.Write(key)
 	r := h.Sum(msg)[:bengerCodeSize]
 	return r
