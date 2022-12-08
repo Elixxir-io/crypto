@@ -44,7 +44,7 @@ func recoverErrorOnNoise(hs *nyquist.HandshakeState, err error) error {
 	default:
 		return err
 	}
-
+	return nil
 }
 
 // panicOnError is a helper function which will panic if the
