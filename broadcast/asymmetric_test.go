@@ -69,13 +69,13 @@ func TestRSAToPublic_Encrypt_Decrypt_BigKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to read random data to payload: %+v", err)
 	}
-	encrypted, mac, nonce, err :=
+	_, encrypted, mac, nonce, err :=
 		ac.EncryptRSAToPublic(payload, pk, packetSize, rng)
 	if err != nil {
 		t.Fatalf("Failed to encrypt payload: %+v", err)
 	}
 
-	decrypted, err := ac.DecryptRSAToPublic(encrypted, mac, nonce)
+	decrypted, _, err := ac.DecryptRSAToPublic(encrypted, mac, nonce)
 	if err != nil {
 		t.Fatalf("Failed to decrypt payload: %+v", err)
 	}
@@ -137,13 +137,13 @@ func TestRSAToPublic_Encrypt_Decrypt_BigKey_SmallPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to read random data to payload: %+v", err)
 	}
-	encrypted, mac, nonce, err :=
+	_, encrypted, mac, nonce, err :=
 		ac.EncryptRSAToPublic(payload, pk, internalPacketSize, rng)
 	if err != nil {
 		t.Fatalf("Failed to encrypt payload: %+v", err)
 	}
 
-	decrypted, err := ac.DecryptRSAToPublic(encrypted, mac, nonce)
+	decrypted, _, err := ac.DecryptRSAToPublic(encrypted, mac, nonce)
 	if err != nil {
 		t.Fatalf("Failed to decrypt payload: %+v", err)
 	}
@@ -174,13 +174,13 @@ func TestRSAToPublic_Encrypt_Decrypt_NewChannel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to read random data to payload: %+v", err)
 	}
-	encrypted, mac, nonce, err :=
+	_, encrypted, mac, nonce, err :=
 		ac.EncryptRSAToPublic(payload, pk, packetSize, rng)
 	if err != nil {
 		t.Fatalf("Failed to encrypt payload: %+v", err)
 	}
 
-	decrypted, err := ac.DecryptRSAToPublic(encrypted, mac, nonce)
+	decrypted, _, err := ac.DecryptRSAToPublic(encrypted, mac, nonce)
 	if err != nil {
 		t.Fatalf("Failed to decrypt payload: %+v", err)
 	}
@@ -243,13 +243,13 @@ func TestRSAToPublic_Encrypt_Decrypt_SmallKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to read random data to payload: %+v", err)
 	}
-	encrypted, mac, nonce, err :=
+	_, encrypted, mac, nonce, err :=
 		ac.EncryptRSAToPublic(payload, pk, packetSize, rng)
 	if err != nil {
 		t.Fatalf("Failed to encrypt payload: %+v", err)
 	}
 
-	decrypted, err := ac.DecryptRSAToPublic(encrypted, mac, nonce)
+	decrypted, _, err := ac.DecryptRSAToPublic(encrypted, mac, nonce)
 	if err != nil {
 		t.Fatalf("Failed to decrypt payload: %+v", err)
 	}
@@ -310,13 +310,13 @@ func TestRSAToPublic_Encrypt_Decrypt_SmallKey_SmallPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to read random data to payload: %+v", err)
 	}
-	encrypted, mac, nonce, err :=
+	_, encrypted, mac, nonce, err :=
 		ac.EncryptRSAToPublic(payload, pk, packetSize, rng)
 	if err != nil {
 		t.Fatalf("Failed to encrypt payload: %+v", err)
 	}
 
-	decrypted, err := ac.DecryptRSAToPublic(encrypted, mac, nonce)
+	decrypted, _, err := ac.DecryptRSAToPublic(encrypted, mac, nonce)
 	if err != nil {
 		t.Fatalf("Failed to decrypt payload: %+v", err)
 	}

@@ -39,27 +39,27 @@ func (c *Channel) GetRSAToPublicMessageLength() (size int, numSubPayloads int,
 
 // EncryptRSAToPublic encrypts the payload with the private key. The payload
 // must not be longer than Channel.GetRSAToPublicMessageLength().
-// symmetric{pubkey|(rsa{p[0]}|rsa{p[1]}|...|rsa0{p[n]})|padding}
+//
+//	symmetric{pubkey | (rsa{p[0]} | rsa{p[1]} | ... | rsa0{p[n]}) | padding}
 func (c *Channel) EncryptRSAToPublic(payload []byte, privKey rsa.PrivateKey,
-	outerPayloadSize int, csprng csprng.Source) (
+	outerPayloadSize int, csprng csprng.Source) (singleEncryptedPayload,
 	doubleEncryptedPayload, mac []byte, nonce format.Fingerprint, err error) {
 
 	// Check that they are using the proper key
 	if !c.IsPublicKey(privKey.Public()) {
-		return nil, nil, nonce, errors.New("private key does not derive a " +
-			"public key whose hash matches our public key hash")
+		return nil, nil, nil, nonce, errors.New("private key does not derive " +
+			"a public key whose hash matches our public key hash")
 	}
 
 	maxPayloadLength, _, subPayloadSize := c.GetRSAToPublicMessageLength()
 
 	if len(payload) > maxPayloadLength {
-		return nil, nil, nonce, errors.New("the " +
-			"encrypted message must be no longer than " +
-			"GetRSAToPublicMessageLength()")
+		return nil, nil, nil, nonce, errors.New("the encrypted message must " +
+			"be no longer than GetRSAToPublicMessageLength()")
 	}
 
 	// Do the multiple RSA encryption operations on a chunked payload
-	singleEncryptedPayload := make([]byte, 0,
+	singleEncryptedPayload = make([]byte, 0,
 		calculateRsaToPublicPacketSize(c.RsaPubKeyLength, c.RSASubPayloads))
 
 	// Prepend the public key
@@ -71,20 +71,21 @@ func (c *Channel) EncryptRSAToPublic(payload []byte, privKey rsa.PrivateKey,
 	for n := 0; n < c.RSASubPayloads; n++ {
 		h.Reset()
 		subsample := permissiveSubsample(payload, subPayloadSize, n)
-		innerCiphertext, err := privKey.EncryptOAEPMulticast(h,
-			csprng, subsample, c.label())
-		if err != nil {
-			return nil, nil, format.Fingerprint{},
-				errors.WithMessagef(err, "Failed to encrypt asymmetric "+
+		innerCiphertext, err2 :=
+			privKey.EncryptOAEPMulticast(h, csprng, subsample, c.label())
+		if err2 != nil {
+			return nil, nil, nil, format.Fingerprint{},
+				errors.WithMessagef(err2, "Failed to encrypt asymmetric "+
 					"broadcast message for subpayload %d", n)
 		}
-		singleEncryptedPayload = append(singleEncryptedPayload, innerCiphertext...)
+		singleEncryptedPayload =
+			append(singleEncryptedPayload, innerCiphertext...)
 	}
 
 	// Symmetric encrypt the resulting payload
-	doubleEncryptedPayload, mac, nonce, err = c.EncryptSymmetric(
-		singleEncryptedPayload, outerPayloadSize, csprng)
-	return
+	doubleEncryptedPayload, mac, nonce, err =
+		c.EncryptSymmetric(singleEncryptedPayload, outerPayloadSize, csprng)
+	return singleEncryptedPayload, doubleEncryptedPayload, mac, nonce, err
 }
 
 // DecryptRSAToPublic decrypts an RSAToPublic message, dealing with both the
@@ -92,47 +93,47 @@ func (c *Channel) EncryptRSAToPublic(payload []byte, privKey rsa.PrivateKey,
 //
 // It will reject messages if they are not encrypted with the channel's public
 // key.
-func (c *Channel) DecryptRSAToPublic(
-	payload []byte, mac []byte, nonce format.Fingerprint) ([]byte, error) {
+func (c *Channel) DecryptRSAToPublic(payload, mac []byte,
+	nonce format.Fingerprint) (decrypted, innerCiphertext []byte, err error) {
 	// Decrypt the symmetric payload
 	// Note: MAC verification only proves the sender knows the channels secret,
 	// not that they are the holder of the private key
-	innerCiphertext, err := c.DecryptSymmetric(payload, mac, nonce)
+	innerCiphertext, err = c.DecryptSymmetric(payload, mac, nonce)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	s := rsa.GetScheme()
 
 	// Check that the message's public key matches the channel's
 	wireProtocolLength := s.GetMarshalWireLength(c.RsaPubKeyLength)
-	rsaPubKey, err := s.UnmarshalPublicKeyWire(
-		innerCiphertext[:wireProtocolLength])
+	rsaPubKey, err :=
+		s.UnmarshalPublicKeyWire(innerCiphertext[:wireProtocolLength])
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if !c.IsPublicKey(rsaPubKey) {
-		return nil, errors.New("public key does not match our public " +
-			"key hash")
+		return nil, nil,
+			errors.New("public key does not match our public key hash")
 	}
 
 	// Chunk up the remaining payload into each RSA decryption and decrypt them
 	h, _ := channelHash(nil)
 	rsaToPublicLength, _, _ := c.GetRSAToPublicMessageLength()
-	decrypted := make([]byte, 0, rsaToPublicLength)
+	decrypted = make([]byte, 0, rsaToPublicLength)
 	for n := 0; n < c.RSASubPayloads; n++ {
 		cypherText := permissiveSubsample(
 			innerCiphertext[wireProtocolLength:], c.RsaPubKeyLength, n)
-		decryptedPart, err :=
+		decryptedPart, err3 :=
 			rsaPubKey.DecryptOAEPMulticast(h, cypherText, c.label())
-		if err != nil {
-			return nil, err
+		if err3 != nil {
+			return nil, nil, err3
 		}
 		decrypted = append(decrypted, decryptedPart...)
 	}
 
-	return decrypted, nil
+	return decrypted, innerCiphertext, nil
 }
 
 // GetRSAToPrivateMessageLength returns the size of the internal payload for
