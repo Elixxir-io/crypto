@@ -52,9 +52,15 @@ func (s *noiseX) CiphertextOverhead() int {
 	return ciphertextOverhead + ecdh.ECDHNIKE.PublicKeySize()
 }
 
-// Encrypt encrypts the given plaintext as a Noise X message.
-func (s *noiseX) Encrypt(plaintext []byte,
-	partnerStaticPubKey nike.PublicKey, rng io.Reader) []byte {
+// Encrypt encrypts the given plaintext as a Noise X message. The
+// plaintext is encrypted using a key derived from an ephemerally
+// generated private key (ecdhPrivate) and the static public key of
+// the user (partnerStaticPubKey). A cryptographically secure random
+// number generator is required to creat this key.
+func (s *noiseX) Encrypt(plaintext []byte, partnerStaticPubKey nike.PublicKey,
+	rng io.Reader) []byte {
+	// Per spec, the X pattern in Noise relies on an ephemeral key. We
+	// generate that here and prepend the public form to the message.
 	ecdhPrivate, ecdhPublic := ecdh.ECDHNIKE.NewKeypair(rng)
 
 	privKey := privateToNyquist(ecdhPrivate)
@@ -71,8 +77,8 @@ func (s *noiseX) Encrypt(plaintext []byte,
 	panicOnError(err)
 	defer hs.Reset()
 	ciphertext, err := hs.WriteMessage(nil, plaintext)
-	handleErrorOnNoise(hs, err)
-	return createNoisePayload(ciphertext, ecdhPublic, rng)
+	panicOnNoiseError(hs, err)
+	return createNoisePayload(ciphertext, ecdhPublic)
 }
 
 // Decrypt decrypts the given ciphertext as a Noise X message.
@@ -102,9 +108,9 @@ func (s *noiseX) Decrypt(ciphertext []byte, myStatic nike.PrivateKey) (
 	defer hs.Reset()
 
 	plaintext, err := hs.ReadMessage(nil, encrypted)
-	handleErrorOnNoise(hs, err)
+	err = recoverErrorOnNoise(hs, err)
 
-	return plaintext, nil
+	return plaintext, err
 }
 
 // parseNoisePayload is a helper function which parses the
@@ -130,8 +136,7 @@ func parseNoisePayload(payload []byte) ([]byte, nike.PublicKey, error) {
 // and format it to fit Noise's specifications. The returned byte data should
 // be formatted as such:
 // Public Key | Ciphertext
-func createNoisePayload(ciphertext []byte,
-	ecdhPublic nike.PublicKey, rng io.Reader) []byte {
+func createNoisePayload(ciphertext []byte, ecdhPublic nike.PublicKey) []byte {
 	publicKeySize := len(ecdhPublic.Bytes())
 	ciphertextSize := len(ciphertext)
 	res := make([]byte, publicKeySize+ciphertextSize)

@@ -145,3 +145,13 @@ func TestPublicKey_Scheme(t *testing.T) {
 	}
 
 }
+
+func TestDerivePublicKey(t *testing.T) {
+	rng := csprng.NewSystemRNG()
+	alicePrivKey, alicePubKey := ECDHNIKE.NewKeypair(rng)
+
+	pubKeyDerived := ECDHNIKE.DerivePublicKey(alicePrivKey)
+
+	require.Equal(t, alicePubKey.Bytes(), pubKeyDerived.Bytes())
+
+}

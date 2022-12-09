@@ -27,6 +27,10 @@ func TestScheme_EncryptSelf(t *testing.T) {
 		t.Fatalf("Failed to encrypt: %+v", err)
 	}
 
+	if !Cipher.IsSelfEncrypted(ciphertext, bobPrivKey) {
+		t.Fatalf("Not self encrypted")
+	}
+
 	pubKey, plaintext, err := Cipher.DecryptSelf(ciphertext, bobPrivKey)
 	if err != nil {
 		t.Fatalf("Failed to decrypt: %+v", err)

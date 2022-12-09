@@ -1,8 +1,9 @@
-////////////////////////////////////////////////////////////////////////////////////////////
-// Copyright © 2022 xx network SEZC                                                       //
-//                                                                                        //
-// Use of this source code is governed by a license that can be found in the LICENSE file //
-////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+// Copyright © 2022 xx network SEZC                                           //
+//                                                                            //
+// Use of this source code is governed by a license that can be found         //
+// in the LICENSE file                                                        //
+////////////////////////////////////////////////////////////////////////////////
 
 package dm
 
@@ -11,25 +12,24 @@ import (
 	"encoding/binary"
 
 	"github.com/pkg/errors"
+	jww "github.com/spf13/jwalterweatherman"
+	"gitlab.com/elixxir/crypto/hash"
 	"gitlab.com/elixxir/crypto/nike"
 	"gitlab.com/elixxir/crypto/nike/ecdh"
 	"gitlab.com/xx_network/crypto/csprng"
-	"golang.org/x/crypto/blake2b"
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
 const (
-	// lengthOfOverhead is the reserved bytes used to indicate the
-	// serialized length of the payload within a ciphertext.
-	lengthOfOverhead = 2
+	selfHMACSalt   = "sendSelfHMACSalt"
+	selfSecretSalt = "sendSelfSecretKeySalt"
+)
 
-	// pubKeySize is the size of the facsimile public key used for self
-	// encryption/decryption.
-	pubKeySize = blake2b.Size256
-
-	// nonceSize is the size of the nonce used for the encryption
-	// algorithm used for self encryption/decryption.
-	nonceSize = chacha20poly1305.NonceSizeX
+var (
+	encryptedSelfOverhead = chacha20poly1305.Overhead +
+		chacha20poly1305.NonceSizeX + hash.DefaultHash().Size()
+	selfOverhead = (encryptedSelfOverhead + prologueSize +
+		ecdh.ECDHNIKE.PublicKeySize())
 )
 
 // IsSelfEncrypted will return whether the ciphertext provided has been
@@ -38,79 +38,51 @@ const (
 func (s *dmCipher) IsSelfEncrypted(data []byte,
 	myPrivateKey nike.PrivateKey) bool {
 
-	// Pull nonce from ciphertext
-	offset := lengthOfOverhead + nonceSize
-	nonce := data[lengthOfOverhead:offset]
-
-	// Pull public key from ciphertext
-	receivedPubKey := data[offset : offset+pubKeySize]
-
-	// Construct expected public key using nonce in ciphertext and
-	// the user's private key
-	expectedPubKey := constructSelfCryptPublicKey(myPrivateKey.Bytes(),
-		nonce)
-
-	// Check that generated public key matches public key within ciphertext
-	return hmac.Equal(receivedPubKey, expectedPubKey[:])
+	esdm, err := newEncryptedSelfDMFromBytes(data)
+	if err != nil {
+		jww.WARN.Printf("IsSelfEncrypted: malformed data")
+		return false
+	}
+	key := deriveSelfSecretKey(esdm.nonce, myPrivateKey)
+	return checkHMAC(esdm.mac, esdm.nonce, esdm.ciphertext, key)
 }
 
 // EncryptSelf will encrypt the passed plaintext. This will simulate the
 // encryption protocol in Encrypt, using just the user's public key.
-func (s *dmCipher) EncryptSelf(plaintext []byte, myPrivateKey nike.PrivateKey,
+func (s *dmCipher) EncryptSelf(message []byte, myPrivateKey nike.PrivateKey,
 	partnerPublicKey nike.PublicKey,
 	maxPayloadSize int) ([]byte, error) {
 
+	if len(message)+selfOverhead > maxPayloadSize {
+		return nil, errors.Errorf("message too big: %d > %d",
+			len(message)+selfOverhead, maxPayloadSize)
+	}
+
+	// sdm is the plaintext part of the packet, so it is the size
+	// of the payload less encryption overhead
+	sdm := newSelfDM(maxPayloadSize - encryptedSelfOverhead)
+	sdm.setMsg(message)
+	sdm.setPubKey(partnerPublicKey)
+
 	// Construct nonce
-	nonce := make([]byte, nonceSize)
+	nonce := make([]byte, chacha20poly1305.NonceSizeX)
 	count, err := csprng.NewSystemRNG().Read(nonce)
 	if err != nil {
 		return nil, err
 	}
-	panicOnRngFailure(count, nonceSize)
+	panicOnRngFailure(count, chacha20poly1305.NonceSizeX)
 
-	// Construct public key
-	pubKey := constructSelfCryptPublicKey(myPrivateKey.Bytes(), nonce)
+	key := deriveSelfSecretKey(nonce, myPrivateKey)
 
-	// Construct key for ChaCha cipher
-	chaKey := constructSelfChaKey(myPrivateKey.Bytes(), pubKey[:], nonce)
-
-	// Construct cipher
-	chaCipher, err := chacha20poly1305.NewX(chaKey[:])
+	chaCipher, err := chacha20poly1305.NewX(key)
 	panicOnChaChaFailure(err)
+	ciphertext := chaCipher.Seal(nil, nonce, sdm.plaintext, nil)
 
-	partnerPubKeyBytes := partnerPublicKey.Bytes()
-	msg := make([]byte, len(plaintext)+len(partnerPubKeyBytes))
-	copy(msg[:len(partnerPubKeyBytes)], partnerPubKeyBytes)
-	copy(msg[len(partnerPubKeyBytes):], plaintext)
-
-	// Encrypt plaintext
-	encrypted := chaCipher.Seal(nil, nonce, msg, nil)
-	res := make([]byte, maxPayloadSize)
-
-	// Place the size of the payload (byte-serialized) at the
-	// beginning of the ciphertext
-	payloadSize := len(encrypted) + nonceSize + len(pubKey)
-	binary.PutUvarint(res, uint64(payloadSize))
-
-	// Place the nonce into the ciphertext
-	copy(res[lengthOfOverhead:], nonce)
-
-	// Place the public key into the ciphertext
-	offset := lengthOfOverhead + nonceSize
-	copy(res[offset:], pubKey[:])
-
-	// Place the encrypted data into the ciphertext
-	offset = offset + len(pubKey)
-	copy(res[offset:], encrypted)
-
-	// Fill the rest of the ciphertext with padding. This
-	// simulates the Noise protocol.
-	count, err = csprng.NewSystemRNG().Read(
-		res[payloadSize+lengthOfOverhead:])
-	panicOnError(err)
-	panicOnRngFailure(count, maxPayloadSize-(payloadSize+lengthOfOverhead))
-
-	return res, nil
+	esdm := newEncryptedSelfDM(maxPayloadSize)
+	esdm.setNonce(nonce)
+	esdm.setMAC(getSelfHMAC(key, ciphertext, nonce))
+	esdm.setCiphertext(ciphertext)
+	return esdm.payload, nil
 }
 
 // DecryptSelf will decrypt the passed ciphertext. This will check if the
@@ -118,67 +90,169 @@ func (s *dmCipher) EncryptSelf(plaintext []byte, myPrivateKey nike.PrivateKey,
 func (s *dmCipher) DecryptSelf(ciphertext []byte,
 	myPrivateKey nike.PrivateKey) (partnerStaticPubKey nike.PublicKey,
 	plaintext []byte, err error) {
-	if !s.IsSelfEncrypted(ciphertext, myPrivateKey) {
-		return nil, nil, errors.New(
-			"Could not confirm that data is self-encrypted")
+
+	esdm, err := newEncryptedSelfDMFromBytes(ciphertext)
+	if err != nil {
+		return nil, nil, errors.Errorf(
+			"Could not confirm that data is self-encrypted: %+v",
+			err)
+	}
+	key := deriveSelfSecretKey(esdm.nonce, myPrivateKey)
+
+	if !checkHMAC(esdm.mac, esdm.nonce, esdm.ciphertext, key) {
+		return nil, nil, errors.Errorf(
+			"failed hmac")
+
 	}
 
-	// Pull nonce from ciphertext
-	offset := lengthOfOverhead + nonceSize
-	nonce := ciphertext[lengthOfOverhead:offset]
-
-	// Pull public key from ciphertext
-	receivedPubKey := ciphertext[offset : offset+pubKeySize]
-
-	// Find size of payload
-	encryptedSizeBytes := ciphertext[:lengthOfOverhead]
-	encryptedSize, _ := binary.Uvarint(encryptedSizeBytes)
-
-	// Pull encrypted payload from ciphertext
-	offset = offset + pubKeySize
-	encrypted := ciphertext[offset : encryptedSize+lengthOfOverhead]
-
-	// Construct key for decryption
-	chaKey := constructSelfChaKey(myPrivateKey.Bytes(), receivedPubKey,
-		nonce)
-
-	// Construct cipher
-	chaCipher, err := chacha20poly1305.NewX(chaKey[:])
-	panicOnChaChaFailure(err)
-
-	// Decrypt ciphertext
-	msg, err := chaCipher.Open(nil, nonce, encrypted, nil)
+	chaCipher, err := chacha20poly1305.NewX(key)
+	if err != nil {
+		return nil, nil, err
+	}
+	msg, err := chaCipher.Open(nil, esdm.nonce, esdm.ciphertext, nil)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	pubKey := ecdh.ECDHNIKE.NewEmptyPublicKey()
-	pubKeySize := ecdh.ECDHNIKE.PublicKeySize()
-	err = pubKey.FromBytes(msg[:pubKeySize])
+	sdm, err := newSelfDMFromBytes(msg)
 	if err != nil {
 		return nil, nil, err
 	}
-	plaintext = msg[pubKeySize:]
 
-	return pubKey, plaintext, nil
+	partnerStaticPubKey, err = sdm.getPubKey()
+	if err != nil {
+		return nil, nil, err
+	}
+	plaintext, err = sdm.getMsg()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return partnerStaticPubKey, plaintext, nil
 }
 
-// constructSelfChaKey is a helper function which generates the key
+// deriveSelfSecretKey is a helper function which generates the key
 // used for self encryption and decryption.
-func constructSelfChaKey(myPrivateKey, pubKey, nonce []byte) [pubKeySize]byte {
-	chaKey := make([]byte, 0)
-	chaKey = append(chaKey, pubKey[:]...)
-	chaKey = append(chaKey, nonce...)
-	chaKey = append(chaKey, myPrivateKey...)
-	return blake2b.Sum256(chaKey)
+func deriveSelfSecretKey(nonce []byte, privateKey nike.PrivateKey) []byte {
+	h := hash.DefaultHash()
+	h.Write([]byte(selfSecretSalt))
+	h.Write(nonce)
+	h.Write(privateKey.Bytes())
+	return h.Sum(nil)
 }
 
-// constructSelfCryptPublicKey is a helper function which will construct the
-// facsimile "public key" will be used to generate the key for self
-// encryption.
-func constructSelfCryptPublicKey(myPrivateKey, nonce []byte) [pubKeySize]byte {
-	// Construct "public key"
-	toHash := append(myPrivateKey, nonce...)
-	return blake2b.Sum256(toHash)
+func getSelfHMAC(key, msg, nonce []byte) []byte {
+	// Construct an additional hmac used to check if it's a self-encrypted
+	// msg (this is somewhat unnecessary due to poly1305, but we have the
+	// space in the packet).
+	mac := hmac.New(hash.DefaultHash, key)
+	mac.Write([]byte(selfHMACSalt))
+	mac.Write(nonce)
+	mac.Write(msg)
+	return mac.Sum(nil)
+}
 
+func checkHMAC(mac, nonce, ciphertext, key []byte) bool {
+	receivedMAC := getSelfHMAC(key, ciphertext, nonce)
+	return hmac.Equal(receivedMAC, mac)
+}
+
+type selfDM struct {
+	plaintext []byte
+	pubkey    []byte
+	size      []byte
+	msg       []byte
+}
+
+func (sd *selfDM) setPubKey(pubkey nike.PublicKey) {
+	copy(sd.pubkey, pubkey.Bytes())
+}
+func (sd *selfDM) setMsg(msg []byte) {
+	binary.BigEndian.PutUint16(sd.size, uint16(len(msg)))
+	copy(sd.msg, msg)
+}
+func (sd *selfDM) getPubKey() (nike.PublicKey, error) {
+	pubKey := ecdh.ECDHNIKE.NewEmptyPublicKey()
+	err := pubKey.FromBytes(sd.pubkey)
+	return pubKey, err
+}
+func (sd *selfDM) getMsg() ([]byte, error) {
+	size := int(binary.BigEndian.Uint16(sd.size))
+	if len(sd.msg) < size {
+		return nil, errors.Errorf("invalid size: %d > %d",
+			sd.size, len(sd.msg))
+	}
+	return sd.msg[:size], nil
+}
+
+func newSelfDM(size int) *selfDM {
+	sd := &selfDM{
+		plaintext: make([]byte, size),
+	}
+	start := 0
+	end := ecdh.ECDHNIKE.PublicKeySize()
+	sd.pubkey = sd.plaintext[start:end]
+	start = end
+	end = start + prologueSize
+	sd.size = sd.plaintext[start:end]
+	start = end
+	end = size
+	sd.msg = sd.plaintext[start:end]
+	return sd
+}
+
+func newSelfDMFromBytes(b []byte) (*selfDM, error) {
+	minSize := hash.DefaultHash().Size() + chacha20poly1305.NonceSizeX
+	if len(b) < minSize {
+		return nil, errors.Errorf("data too small for selfDM: %d < %d",
+			len(b), minSize)
+	}
+	sd := newSelfDM(len(b))
+	copy(sd.plaintext, b)
+	return sd, nil
+}
+
+type encryptedSelfDM struct {
+	payload    []byte
+	mac        []byte
+	nonce      []byte
+	ciphertext []byte
+}
+
+func (sd *encryptedSelfDM) setMAC(mac []byte) {
+	copy(sd.mac, mac)
+}
+func (sd *encryptedSelfDM) setNonce(nonce []byte) {
+	copy(sd.nonce, nonce)
+}
+func (sd *encryptedSelfDM) setCiphertext(ciphertext []byte) {
+	copy(sd.ciphertext, ciphertext)
+}
+
+func newEncryptedSelfDM(size int) *encryptedSelfDM {
+	sd := &encryptedSelfDM{
+		payload: make([]byte, size),
+	}
+	start := 0
+	end := hash.DefaultHash().Size()
+	sd.mac = sd.payload[start:end]
+	start = end
+	end = start + chacha20poly1305.NonceSizeX
+	sd.nonce = sd.payload[start:end]
+	start = end
+	end = size
+	sd.ciphertext = sd.payload[start:end]
+	return sd
+}
+
+func newEncryptedSelfDMFromBytes(b []byte) (*encryptedSelfDM, error) {
+	minSize := hash.DefaultHash().Size() + chacha20poly1305.NonceSizeX
+	if len(b) < minSize {
+		return nil, errors.Errorf(
+			"data too small for encryptedSelfDM: %d < %d",
+			len(b), minSize)
+	}
+	sd := newEncryptedSelfDM(len(b))
+	copy(sd.payload, b)
+	return sd, nil
 }
