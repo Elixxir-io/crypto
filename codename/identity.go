@@ -9,6 +9,7 @@ package codename
 
 import (
 	"crypto/ed25519"
+	"encoding/binary"
 	"io"
 	"strings"
 
@@ -44,8 +45,9 @@ func (i PrivateIdentity) Marshal() []byte {
 // GetDMToken returns the DM Token for this codename identity.
 // TODO: This is not yet stored in the data model, which is why it is
 // computed here and accessed through this function.
-func (i PrivateIdentity) GetDMToken() []byte {
-	return hashPrivateKey(i.Privkey)
+func (i PrivateIdentity) GetDMToken() uint32 {
+	fullToken := hashPrivateKey(i.Privkey)
+	return binary.BigEndian.Uint32(fullToken[0:4])
 }
 
 // UnmarshalPrivateIdentity created a private identity from a marshaled version
