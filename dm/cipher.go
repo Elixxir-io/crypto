@@ -1,58 +1,59 @@
-////////////////////////////////////////////////////////////////////////////////////////////
-// Copyright © 2020 xx network SEZC                                                       //
-//                                                                                        //
-// Use of this source code is governed by a license that can be found in the LICENSE file //
-////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+// Copyright © 2022 xx network SEZC                                           //
+//                                                                            //
+// Use of this source code is governed by a license that can be found         //
+// in the LICENSE file                                                        //
+////////////////////////////////////////////////////////////////////////////////
 
 package dm
 
+// Direct Messages are encrypted using the noise protocol X pattern. On the
+// wire, the packet is readable by the destination using the ephemeral key
+// against the recipients static public key, hiding the sender identity so long
+// as the recipient's private key remains secret.
+//
+// The decrypted payload includes the senders static public key and a
+// 16 byte benger code, which is a hash of the plaintext along with
+// the key derived from both parties static keys. This prevents users
+// from sending messages with identities they do not own, although they can
+// still send (spoof) messages as each other.
+
 import (
 	"encoding/binary"
+	"io"
+
+	"github.com/pkg/errors"
+	jww "github.com/spf13/jwalterweatherman"
 	"gitlab.com/elixxir/crypto/nike"
 	"gitlab.com/elixxir/crypto/nike/ecdh"
-	"gitlab.com/xx_network/crypto/csprng"
-	"gitlab.com/yawning/nyquist.git"
-	"golang.org/x/crypto/blake2b"
-	"golang.org/x/crypto/chacha20poly1305"
 )
 
 const (
-	prologueSize       = 2
-	ciphertextOverhead = 96
-
-	// lengthOfOverhead is the reserved bytes used to indicate the serialized
-	// length of the payload within a ciphertext.
-	lengthOfOverhead = 2
-
-	// pubKeySize is the size of the facsimile public key used for self
-	// encryption/decryption.
-	pubKeySize = blake2b.Size256
-
-	// nonceSize is the size of the nonce used for the encryption
-	// algorithm used for self encryption/decryption.
-	nonceSize = chacha20poly1305.NonceSizeX
+	bengerCodeSize = 16
+	prologueSize   = 2
 )
 
 var (
-	Cipher   NoiseScheme = &scheme{}
-	protocol *nyquist.Protocol
-	version  = []byte{0x0, 0x0}
+	Cipher DMCipher = &dmCipher{}
 )
 
-// NoiseScheme is a minimal abstraction useful for building a noise
-// protocol layer.
-type NoiseScheme interface {
+// DMCipher is a minimal abstraction for building the DMCipher Protocol layer
+type DMCipher interface {
 	// CiphertextOverhead returns the ciphertext overhead in bytes.
 	CiphertextOverhead() int
 
-	// Encrypt encrypts the given plaintext as a Noise X message.
+	// Encrypt encrypts the given plaintext as an encrypted Direct message.
 	Encrypt(plaintext []byte,
+		senderStaticPrivKey nike.PrivateKey,
 		partnerStaticPubKey nike.PublicKey,
-		maxPayloadSize int) []byte
+		rng io.Reader,
+		maxPayloadSize int) (ciphertext []byte)
 
-	// Decrypt decrypts the given ciphertext as a Noise X message.
-	Decrypt(ciphertext []byte,
-		myStatic nike.PrivateKey) ([]byte, error)
+	// Decrypt decrypts the given ciphertext encrypted as a Direct
+	// message.
+	Decrypt(ciphertext []byte, senderStaticPrivKey nike.PrivateKey) (
+		partnerStaticPublicKey nike.PublicKey, plaintext []byte,
+		err error)
 
 	// IsSelfEncrypted will return whether the ciphertext provided has been
 	// encrypted by the owner of the passed in private key. Returns true
@@ -62,131 +63,91 @@ type NoiseScheme interface {
 	// EncryptSelf will encrypt the passed plaintext. This will simulate the
 	// encryption protocol in Encrypt, using just the user's public key.
 	EncryptSelf(plaintext []byte, myPrivateKey nike.PrivateKey,
+		partnerStaticPubKey nike.PublicKey,
 		maxPayloadSize int) ([]byte, error)
 
-	// DecryptSelf will decrypt the passed ciphertext. This will check if the
-	// ciphertext is expected using IsSelfEncrypted.
-	DecryptSelf(ciphertext []byte, myPrivateKey nike.PrivateKey) ([]byte, error)
+	// DecryptSelf will decrypt the passed ciphertext. This will
+	// check if the ciphertext is expected using IsSelfEncrypted.
+	DecryptSelf(ciphertext []byte, myPrivateKey nike.PrivateKey) (
+		partnerstaticPubKey nike.PublicKey, plaintext []byte, err error)
 }
 
-// scheme is an implementation of NoiseScheme interface.
-type scheme struct{}
+type dmCipher struct{}
 
-var _ NoiseScheme = (*scheme)(nil)
-
-func (s *scheme) CiphertextOverhead() int {
-	return ciphertextOverhead
+func (s *dmCipher) CiphertextOverhead() int {
+	return (NoiseX.CiphertextOverhead() + ecdh.ECDHNIKE.PublicKeySize() +
+		bengerCodeSize + prologueSize)
 }
 
-// Encrypt encrypts the given plaintext as a Noise X message.
-func (s *scheme) Encrypt(plaintext []byte, partnerStaticPubKey nike.PublicKey,
-	maxPayloadSize int) []byte {
-	ecdhPrivate, ecdhPublic := ecdh.ECDHNIKE.NewKeypair()
+// Encrypt encrypts the given plaintext as an encrypted Direct message.
+// Direct Messages are Noise X messages with a payload that includes
+// a keyed MAC based on the sender/partner static key derivation.
+func (s *dmCipher) Encrypt(plaintext []byte,
+	senderStaticPrivKey nike.PrivateKey,
+	partnerStaticPubKey nike.PublicKey,
+	rng io.Reader,
+	maxCiphertextSize int) (ciphertext []byte) {
 
-	privKey := privateToNyquist(ecdhPrivate)
-	theirPubKey := publicToNyquist(partnerStaticPubKey)
-
-	cfg := &nyquist.HandshakeConfig{
-		Protocol:     protocol,
-		Prologue:     version,
-		LocalStatic:  privKey,
-		RemoteStatic: theirPubKey,
-		IsInitiator:  true,
+	if len(plaintext)+s.CiphertextOverhead() > maxCiphertextSize {
+		jww.FATAL.Panicf("plaintext too large")
 	}
-	hs, err := nyquist.NewHandshake(cfg)
-	panicOnError(err)
-	defer hs.Reset()
-	ciphertext, err := hs.WriteMessage(nil, plaintext)
-	handleErrorOnNoise(hs, err)
-	return ciphertextToNoise(ciphertext, ecdhPublic, maxPayloadSize)
+
+	k := senderStaticPrivKey.DeriveSecret(partnerStaticPubKey)
+	bengerCode := makeBengerCode(k, plaintext)
+	senderPubKey := ecdh.ECDHNIKE.DerivePublicKey(senderStaticPrivKey)
+	senderPubKeyBytes := senderPubKey.Bytes()
+
+	payloadSize := maxCiphertextSize - NoiseX.CiphertextOverhead()
+
+	// Format: PubKey | bengerCode | len(msg) | msg
+	msg := make([]byte, payloadSize)
+	copy(msg, senderPubKeyBytes)
+	offset := len(senderPubKeyBytes)
+	copy(msg[offset:], bengerCode)
+	offset += len(bengerCode)
+	binary.BigEndian.PutUint16(msg[offset:offset+prologueSize],
+		uint16(len(plaintext)))
+	offset += prologueSize
+	copy(msg[offset:offset+len(plaintext)], plaintext)
+
+	return NoiseX.Encrypt(msg, partnerStaticPubKey, rng)
 }
 
-// Decrypt decrypts the given ciphertext as a Noise X message.
-func (s *scheme) Decrypt(ciphertext []byte, myStatic nike.PrivateKey) ([]byte, error) {
-
-	encrypted, partnerStaticPubKey, err := parseCiphertext(ciphertext)
-	if err != nil {
-		return nil, err
-	}
-
-	privKey := privateToNyquist(myStatic)
-	theirPubKey := publicToNyquist(partnerStaticPubKey)
-
-	cfg := &nyquist.HandshakeConfig{
-		Protocol:     protocol,
-		Prologue:     version,
-		LocalStatic:  privKey,
-		RemoteStatic: theirPubKey,
-		IsInitiator:  false,
-	}
-
-	hs, err := nyquist.NewHandshake(cfg)
-	if err != nil {
-		return nil, err
-	}
-	defer hs.Reset()
-
-	plaintext, err := hs.ReadMessage(nil, encrypted)
-	handleErrorOnNoise(hs, err)
-
-	return plaintext, nil
-}
-
-// parseCiphertext is a helper function which parses the ciphertext. This should
-// be the inverse of ciphertextToNoise, returning to the user
-// the encrypted data and the public key.
-func parseCiphertext(ciphertext []byte) ([]byte, nike.PublicKey, error) {
-	// Extract the payload from the ciphertext
-	lengthOfPayloadBytes := ciphertext[:lengthOfOverhead]
-	payloadSize, _ := binary.Uvarint(lengthOfPayloadBytes)
-	payload := ciphertext[lengthOfOverhead:payloadSize]
-
-	// Extract the public key from the payload
-	publicKeySize := ecdh.ECDHNIKE.PublicKeySize()
-	publicKeyBytes := payload[:publicKeySize]
-	publicKey, err := ecdh.ECDHNIKE.
-		UnmarshalBinaryPublicKey(publicKeyBytes)
+// Decrypt decrypts the given ciphertext encrypted as a Direct
+// message. This returns the partnerStaticPublicKey and the
+// plaintext of the message.
+func (s *dmCipher) Decrypt(ciphertext []byte,
+	receiverStaticPrivKey nike.PrivateKey) (
+	partnerStaticPublicKey nike.PublicKey, plaintext []byte,
+	err error) {
+	msg, err := NoiseX.Decrypt(ciphertext, receiverStaticPrivKey)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Extract encrypted data from payload
-	encrypted := payload[publicKeySize:]
+	// Format: PubKey | bengerCode | msg
+	pubKey := ecdh.ECDHNIKE.NewEmptyPublicKey()
+	pubSize := ecdh.ECDHNIKE.PublicKeySize()
+	err = pubKey.FromBytes(msg[:pubSize])
+	if err != nil {
+		return nil, nil, err
+	}
 
-	return encrypted, publicKey, nil
-}
+	offset := pubSize
+	readBengerCode := msg[offset : offset+bengerCodeSize]
+	offset += bengerCodeSize
 
-// ciphertextToNoise is a helper function which will take the ciphertext
-// and format it to fit Noise's specifications. The returned byte data should
-// be formatted as such:
-// Length of Payload | Public Key | Ciphertext | Random Data
-func ciphertextToNoise(ciphertext []byte,
-	ecdhPublic nike.PublicKey, maxPayloadSize int) []byte {
-	res := make([]byte, maxPayloadSize)
+	readMsgSize := binary.BigEndian.Uint16(
+		msg[offset : offset+prologueSize])
+	offset += prologueSize
 
-	lengthOfPublicKey := len(ecdhPublic.Bytes())
-	actualPayloadSize := lengthOfPublicKey + len(ciphertext) + lengthOfOverhead
+	plaintext = msg[offset : offset+int(readMsgSize)]
 
-	// Put at the start the length of the payload (ciphertext)
-	binary.PutUvarint(res, uint64(actualPayloadSize))
+	k := receiverStaticPrivKey.DeriveSecret(pubKey)
 
-	// Put in the public key per the Noise spec
-	copy(res[lengthOfOverhead:], ecdhPublic.Bytes())
+	if !isValidBengerCode(readBengerCode, k, plaintext) {
+		return nil, nil, errors.Errorf("[DM] failed benger mac check")
+	}
 
-	// Put in the cipher text
-	copy(res[lengthOfOverhead+lengthOfPublicKey:], ciphertext)
-
-	// Fill the rest of the context with random data
-	rng := csprng.NewSystemRNG()
-	count, err := rng.Read(res[actualPayloadSize:])
-	panicOnError(err)
-	panicOnRngFailure(count, maxPayloadSize-actualPayloadSize)
-
-	return res
-}
-
-func init() {
-	var err error
-	protocol, err = nyquist.NewProtocol("Noise_X_25519_ChaChaPoly_BLAKE2s")
-	panicOnError(err)
+	return pubKey, plaintext, nil
 }

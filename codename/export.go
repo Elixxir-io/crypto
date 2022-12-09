@@ -5,7 +5,7 @@
 // LICENSE file.                                                              //
 ////////////////////////////////////////////////////////////////////////////////
 
-package channel
+package codename
 
 import (
 	"bytes"
@@ -16,7 +16,6 @@ import (
 
 	"github.com/pkg/errors"
 	"gitlab.com/elixxir/crypto/backup"
-	"gitlab.com/elixxir/crypto/codename"
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
@@ -260,16 +259,14 @@ func decodePrivateIdentity(data []byte) (PrivateIdentity, error) {
 	codesetVersion := buff.Next(codesetLen)[0]
 	privKey := ed25519.PrivateKey(buff.Next(ed25519.PrivateKeySize))
 	pubKey := ed25519.PublicKey(buff.Next(ed25519.PublicKeySize))
-	identity, err := codename.ConstructIdentity(pubKey, codesetVersion)
+	identity, err := ConstructIdentity(pubKey, codesetVersion)
 	if err != nil {
 		return PrivateIdentity{}, err
 	}
 
 	pi := PrivateIdentity{
-		codename.PrivateIdentity{
-			Privkey:  &privKey,
-			Identity: identity,
-		},
+		Privkey:  &privKey,
+		Identity: identity,
 	}
 
 	return pi, nil

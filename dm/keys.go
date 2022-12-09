@@ -15,19 +15,19 @@ import (
 )
 
 func privateToNyquist(privKey nike.PrivateKey) dh.Keypair {
-	_, ok := privKey.(*ecdh.PrivateKey)
+	p, ok := privKey.(*ecdh.PrivateKey)
 	panicOnFailureToCast(ok, "private key")
 
-	myPrivKey, err := protocol.DH.ParsePrivateKey(privKey.Bytes())
+	myPrivKey, err := protocol.DH.ParsePrivateKey(p.MontgomeryBytes())
 	panicOnError(err)
 
 	return myPrivKey
 }
 
 func publicToNyquist(pubKey nike.PublicKey) dh.PublicKey {
-	_, ok := pubKey.(*ecdh.PublicKey)
+	p, ok := pubKey.(*ecdh.PublicKey)
 	panicOnFailureToCast(ok, "public key")
-	myPubKey, err := protocol.DH.ParsePublicKey(pubKey.Bytes())
+	myPubKey, err := protocol.DH.ParsePublicKey(p.MontgomeryBytes())
 	if err != nil {
 		jww.FATAL.Panic(err)
 	}

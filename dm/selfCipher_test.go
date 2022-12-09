@@ -8,28 +8,40 @@ package dm
 
 import (
 	"bytes"
-	"gitlab.com/elixxir/crypto/nike/ecdh"
 	"testing"
+
+	"gitlab.com/elixxir/crypto/nike/ecdh"
+	"gitlab.com/xx_network/crypto/csprng"
 )
 
 func TestScheme_EncryptSelf(t *testing.T) {
 	message1 := []byte("i am a message")
+	rng := csprng.NewSystemRNG()
 
-	//alicePrivKey, _ := ecdh.ECDHNIKE.NewKeypair()
-	bobPrivKey, _ := ecdh.ECDHNIKE.NewKeypair()
+	_, alicePubKey := ecdh.ECDHNIKE.NewKeypair(rng)
+	bobPrivKey, _ := ecdh.ECDHNIKE.NewKeypair(rng)
 
-	ciphertext, err := Cipher.EncryptSelf(message1, bobPrivKey, 1024)
+	ciphertext, err := Cipher.EncryptSelf(message1, bobPrivKey,
+		alicePubKey, 1024)
 	if err != nil {
 		t.Fatalf("Failed to encrypt: %+v", err)
 	}
-	
-	plaintext, err := Cipher.DecryptSelf(ciphertext, bobPrivKey)
+
+	if !Cipher.IsSelfEncrypted(ciphertext, bobPrivKey) {
+		t.Fatalf("Not self encrypted")
+	}
+
+	pubKey, plaintext, err := Cipher.DecryptSelf(ciphertext, bobPrivKey)
 	if err != nil {
 		t.Fatalf("Failed to decrypt: %+v", err)
 	}
 
 	if !bytes.Equal(message1, plaintext) {
 		t.Fatalf("Decrypted plaintext does not match originally encrypted message!")
+	}
+
+	if !bytes.Equal(pubKey.Bytes(), alicePubKey.Bytes()) {
+		t.Fatalf("bad public keys: %s != %s", pubKey, alicePubKey)
 	}
 
 }

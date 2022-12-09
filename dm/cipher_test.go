@@ -9,53 +9,31 @@ package dm
 import (
 	"testing"
 
-	jww "github.com/spf13/jwalterweatherman"
 	"github.com/stretchr/testify/require"
-	"gitlab.com/elixxir/crypto/nike"
 	"gitlab.com/elixxir/crypto/nike/ecdh"
-	"gitlab.com/yawning/nyquist.git"
+	"gitlab.com/xx_network/crypto/csprng"
 )
 
 func TestEncryptDecrypt(t *testing.T) {
 	message1 := []byte("i am a message")
 
-	//alicePrivKey, _ := ecdh.ECDHNIKE.NewKeypair()
-	bobPrivKey, bobPubKey := ecdh.ECDHNIKE.NewKeypair()
+	rng := csprng.NewSystemRNG()
 
-	ciphertext := Cipher.Encrypt(message1, bobPubKey, 10000)
+	alicePrivKey, expAlicePubKey := ecdh.ECDHNIKE.NewKeypair(rng)
+	bobPrivKey, bobPubKey := ecdh.ECDHNIKE.NewKeypair(rng)
 
-	message2, err := Cipher.Decrypt(ciphertext, bobPrivKey)
+	// Encrypt for Bob from Alice
+	ciphertext := Cipher.Encrypt(message1, alicePrivKey, bobPubKey,
+		rng, 10000)
+
+	require.Equal(t, 10000, len(ciphertext))
+
+	alicePubKey, message2, err := Cipher.Decrypt(ciphertext, bobPrivKey)
 	require.NoError(t, err)
 
+	require.Equal(t, len(message1), len(message2))
+
+	require.Equal(t, expAlicePubKey.Bytes(), alicePubKey.Bytes())
+
 	require.Equal(t, message1, message2)
-}
-
-func wrongEncrypt(plaintext []byte, myStatic nike.PrivateKey, partnerStaticPubKey nike.PublicKey) []byte {
-	privKey := privateToNyquist(myStatic)
-	theirPubKey := publicToNyquist(partnerStaticPubKey)
-
-	cfg := &nyquist.HandshakeConfig{
-		Protocol:     protocol,
-		Prologue:     []byte{9, 9},
-		LocalStatic:  privKey,
-		RemoteStatic: theirPubKey,
-		IsInitiator:  true,
-	}
-	hs, err := nyquist.NewHandshake(cfg)
-	if err != nil {
-		jww.FATAL.Panic(err)
-	}
-	defer hs.Reset()
-	ciphertext, err := hs.WriteMessage(nil, plaintext)
-	switch err {
-	case nyquist.ErrDone:
-		status := hs.GetStatus()
-		if status.Err != nyquist.ErrDone {
-			jww.FATAL.Panic(status.Err)
-		}
-	case nil:
-	default:
-		jww.FATAL.Panic(err)
-	}
-	return ciphertext
 }
