@@ -10,6 +10,7 @@ package broadcast
 import (
 	"bytes"
 	"github.com/pkg/errors"
+	jww "github.com/spf13/jwalterweatherman"
 	"gitlab.com/elixxir/crypto/rsa"
 	"gitlab.com/elixxir/primitives/format"
 	"gitlab.com/xx_network/crypto/csprng"
@@ -103,37 +104,48 @@ func (c *Channel) DecryptRSAToPublic(payload, mac []byte,
 		return nil, nil, err
 	}
 
+	// Decrypt inner ciphertext
+	decrypted, err = c.DecryptInner(innerCiphertext)
+
+	return decrypted, innerCiphertext, err
+}
+
+// DecryptInner decrypts the inner ciphertext found inside an RSAToPublic
+// message.
+func (c *Channel) DecryptInner(innerCiphertext []byte) ([]byte, error) {
 	s := rsa.GetScheme()
 
-	// Check that the message's public key matches the channel's
+	// Check that the message's public key matches the channel's public key
 	wireProtocolLength := s.GetMarshalWireLength(c.RsaPubKeyLength)
 	rsaPubKey, err :=
 		s.UnmarshalPublicKeyWire(innerCiphertext[:wireProtocolLength])
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-
 	if !c.IsPublicKey(rsaPubKey) {
-		return nil, nil,
-			errors.New("public key does not match our public key hash")
+		return nil, errors.New("public key does not match our public key hash")
 	}
 
 	// Chunk up the remaining payload into each RSA decryption and decrypt them
-	h, _ := channelHash(nil)
+	h, err := channelHash(nil)
+	if err != nil {
+		jww.FATAL.Panic(err)
+	}
 	rsaToPublicLength, _, _ := c.GetRSAToPublicMessageLength()
-	decrypted = make([]byte, 0, rsaToPublicLength)
+	decrypted := make([]byte, 0, rsaToPublicLength)
 	for n := 0; n < c.RSASubPayloads; n++ {
 		cypherText := permissiveSubsample(
 			innerCiphertext[wireProtocolLength:], c.RsaPubKeyLength, n)
-		decryptedPart, err3 :=
+		decryptedPart, err2 :=
 			rsaPubKey.DecryptOAEPMulticast(h, cypherText, c.label())
-		if err3 != nil {
-			return nil, nil, err3
+		if err2 != nil {
+			return nil, errors.Wrapf(err2,
+				"failed to decrypt sub-payload %d of %d", n, c.RSASubPayloads)
 		}
 		decrypted = append(decrypted, decryptedPart...)
 	}
 
-	return decrypted, innerCiphertext, nil
+	return decrypted, nil
 }
 
 // GetRSAToPrivateMessageLength returns the size of the internal payload for
