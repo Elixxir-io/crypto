@@ -575,3 +575,81 @@ func TestChannel_EncryptRSAToPrivate_DecryptRSAToPrivate_SmallKey_SmallPacket(t 
 			"\nexpected: %v\nreceived: %v", payload, decrypted)
 	}
 }
+
+func TestChannel_DecryptRSAToPublicInner(t *testing.T) {
+	rng := csprng.NewSystemRNG()
+	packetSize := 1000
+	internalPacketSize := MaxSizedBroadcastPayloadSize(packetSize)
+	keySize, n := calculateKeySize(internalPacketSize, internalPacketSize)
+	if n != 1 {
+		t.Fatalf("Keysize is not big.\nexpected: %d\nreceived: %d", 1, n)
+	}
+
+	s := rsa.GetScheme()
+	pk, err := s.Generate(rng, keySize*8)
+	if err != nil {
+		t.Fatalf("Failed to generate private key: %+v", err)
+	}
+	name := "Asymmetric channel"
+	desc := "Asymmetric channel description"
+	level := Public
+	created := netTime.Now()
+	salt := cmix.NewSalt(rng, 32)
+
+	secret := make([]byte, 32)
+	if _, err = rng.Read(secret); err != nil {
+		t.Fatal(err)
+	}
+
+	rid, err := NewChannelID(
+		name, desc, level, created, salt, HashPubKey(pk.Public()), secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ac := Channel{
+		ReceptionID:     rid,
+		Name:            name,
+		Description:     desc,
+		Level:           level,
+		Created:         created,
+		Salt:            salt,
+		RsaPubKeyHash:   HashPubKey(pk.Public()),
+		RsaPubKeyLength: keySize,
+		RSASubPayloads:  n,
+		Secret:          secret,
+	}
+
+	maxPayloadLen, _, _ := ac.GetRSAToPublicMessageLength()
+	payload := make([]byte, maxPayloadLen)
+	if _, err = rng.Read(payload); err != nil {
+		t.Fatalf("Failed to read random data to payload: %+v", err)
+	}
+
+	singleEncryptedPayload, _, _, _, err :=
+		ac.EncryptRSAToPublic(payload, pk, packetSize, rng)
+	if err != nil {
+		t.Fatalf("Failed to encrypt payload: %+v", err)
+	}
+
+	decrypted, err := ac.DecryptRSAToPublicInner(singleEncryptedPayload)
+	if err != nil {
+		t.Fatalf("Failed to decrypt payload: %+v", err)
+	}
+
+	if !bytes.Equal(decrypted, payload) {
+		t.Errorf("Decrypt did not return expected data"+
+			"\nexpected: %v\nreceived: %v", payload, decrypted)
+	}
+
+	// Test that it properly trims payload that is too long
+	decrypted, err = ac.DecryptRSAToPublicInner(
+		append(singleEncryptedPayload, singleEncryptedPayload...))
+	if err != nil {
+		t.Fatalf("Failed to decrypt payload: %+v", err)
+	}
+
+	if !bytes.Equal(decrypted, payload) {
+		t.Errorf("Decrypt did not return expected data"+
+			"\nexpected: %v\nreceived: %v", payload, decrypted)
+	}
+}

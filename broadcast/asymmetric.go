@@ -105,14 +105,18 @@ func (c *Channel) DecryptRSAToPublic(payload, mac []byte,
 	}
 
 	// Decrypt inner ciphertext
-	decrypted, err = c.DecryptInner(innerCiphertext)
+	decrypted, err = c.DecryptRSAToPublicInner(innerCiphertext)
 
 	return decrypted, innerCiphertext, err
 }
 
-// DecryptInner decrypts the inner ciphertext found inside an RSAToPublic
-// message.
-func (c *Channel) DecryptInner(innerCiphertext []byte) ([]byte, error) {
+// DecryptRSAToPublicInner decrypts the inner ciphertext found inside an
+// RSAToPublic message.
+//
+// This is the inner decryption function for DecryptRSAToPublic. It should only
+// be called in special cases to decrypt a message that has already had the
+// first layer of encryption removed.
+func (c *Channel) DecryptRSAToPublicInner(innerCiphertext []byte) ([]byte, error) {
 	s := rsa.GetScheme()
 
 	// Check that the message's public key matches the channel's public key
