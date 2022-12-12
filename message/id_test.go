@@ -34,7 +34,7 @@ func TestMakeID_Unique(t *testing.T) {
 		contents := make([]byte, 1000)
 		prng.Read(contents)
 		inputs[i] = contents
-		results[i] = MakeID(chID, 8675309, contents, []byte("extra"),
+		results[i] = deriveID(chID, 8675309, contents, []byte("extra"),
 			[]byte("stuff"))
 	}
 
@@ -62,9 +62,9 @@ func TestMakeID_Channels_Unique(t *testing.T) {
 		contents := make([]byte, 1000)
 		prng.Read(contents)
 
-		a := MakeID(chID1, 8675309, contents, []byte("extra"),
+		a := deriveID(chID1, 8675309, contents, []byte("extra"),
 			[]byte("stuff"))
-		b := MakeID(chID2, 8675309, contents, []byte("extra"),
+		b := deriveID(chID2, 8675309, contents, []byte("extra"),
 			[]byte("stuff"))
 		require.NotEqual(t, a, b)
 	}
@@ -87,7 +87,7 @@ func TestMakeID_Constancy(t *testing.T) {
 	for i := range results {
 		contents := make([]byte, 1000)
 		prng.Read(contents)
-		results[i] = MakeID(chID, 8675309, contents, []byte("extra"),
+		results[i] = deriveID(chID, 8675309, contents, []byte("extra"),
 			[]byte("stuff"))
 	}
 
@@ -109,7 +109,7 @@ func TestID_Equals(t *testing.T) {
 	for i := range results {
 		contents := make([]byte, 1000)
 		prng.Read(contents)
-		results[i] = MakeID(chID, 8675309, contents, []byte("extra"),
+		results[i] = deriveID(chID, 8675309, contents, []byte("extra"),
 			[]byte("stuff"))
 	}
 
@@ -138,7 +138,7 @@ func TestID_Bytes(t *testing.T) {
 	for i := range results {
 		contents := make([]byte, 1000)
 		prng.Read(contents)
-		results[i] = MakeID(chID, 8675309, contents, []byte("extra"),
+		results[i] = deriveID(chID, 8675309, contents, []byte("extra"),
 			[]byte("stuff"))
 	}
 
@@ -167,7 +167,7 @@ func TestID_DeepCopy(t *testing.T) {
 	for i := range results {
 		contents := make([]byte, 1000)
 		prng.Read(contents)
-		results[i] = MakeID(chID, 8675309, contents, []byte("extra"),
+		results[i] = deriveID(chID, 8675309, contents, []byte("extra"),
 			[]byte("stuff"))
 	}
 
@@ -199,7 +199,7 @@ func TestID_Marshal_UnmarshalID(t *testing.T) {
 	for i := range results {
 		contents := make([]byte, 1000)
 		prng.Read(contents)
-		results[i] = MakeID(chID, 8675309, contents, []byte("extra"),
+		results[i] = deriveID(chID, 8675309, contents, []byte("extra"),
 			[]byte("stuff"))
 	}
 
@@ -230,7 +230,7 @@ func TestID_MarshalJSON_UnmarshalJSON(t *testing.T) {
 	chID, _ := id.NewRandomID(prng, id.User)
 	contents := make([]byte, 1000)
 	prng.Read(contents)
-	mid := MakeID(chID, 8675309, contents, []byte("extra"),
+	mid := deriveID(chID, 8675309, contents, []byte("extra"),
 		[]byte("stuff"))
 
 	data, err := json.Marshal(mid)
@@ -272,7 +272,7 @@ func TestID_MarshalJSON_Consistency(t *testing.T) {
 		chID, _ := id.NewRandomID(prng, id.User)
 		contents := make([]byte, 1000)
 		prng.Read(contents)
-		mid := MakeID(chID, 8675309, contents, []byte("extra"),
+		mid := deriveID(chID, 8675309, contents, []byte("extra"),
 			[]byte("stuff"))
 
 		data, err := json.Marshal(mid)

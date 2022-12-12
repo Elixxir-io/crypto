@@ -24,38 +24,8 @@ const (
 	idSalt = "xxMessageIdSalt"
 )
 
-// Error messages.
-const (
-	unmarshalDataLenErr = "received %d bytes when %d bytes required"
-)
-
-// ID is the unique identifier of a channel message.
-type ID [IDLen]byte
-
-// MakeID returns the message ID for the given serialized message.
-//
-// Due to the fact that messages contain the round they are sent in, they are
-// replay resistant. This property, when combined with the collision resistance
-// of the hash function, ensures that an adversary will not be able to cause
-// multiple messages to have the same ID.
-//
-// The MessageID contain the target ID (channel ID or recipient ID) as
-// well to ensure that if a user is, e.g., in two channels that have messages
-// with the same text sent to them in the same round, the message IDs
-// will differ.
-//
-// The message ID is defined as:
-//
-//	H(salt | targetID | roundID | message | otherParts...)
-//
-// message is usually all or part of a serialize message before padding has been
-// added and before encryption.
-//
-// Different message types can add otherParts to be included in the hash, such
-// as a timestamp or other element. Users of this function must agree on such
-// parts for the message ID to agree.
-func MakeID(targetID *id.ID, roundID uint64, message []byte,
-	otherParts ...[]byte) ID {
+func deriveID(targetID *id.ID, roundID uint64,
+	message []byte, otherParts ...[]byte) ID {
 	h := hash.DefaultHash()
 	h.Write([]byte(idSalt))
 	h.Write(targetID[:])
@@ -74,6 +44,14 @@ func MakeID(targetID *id.ID, roundID uint64, message []byte,
 	copy(mid[:], midBytes)
 	return mid
 }
+
+// Error messages.
+const (
+	unmarshalDataLenErr = "received %d bytes when %d bytes required"
+)
+
+// ID is the unique identifier of a channel message.
+type ID [IDLen]byte
 
 // Equals checks if two message IDs are the same.
 //
