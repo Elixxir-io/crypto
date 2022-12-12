@@ -13,6 +13,8 @@ import (
 	"gitlab.com/xx_network/primitives/id"
 )
 
+var dmIDSalt = []byte("xxDMMessageIdSalt")
+
 // DirectMessage objects are required to implement this interface.
 type DirectMessage interface {
 	GetRoundID() uint64
@@ -37,5 +39,5 @@ func DeriveDirectMessageID(receptionID *id.ID, msg DirectMessage) ID {
 
 	return deriveID(receptionID, msg.GetRoundID(), msg.GetPayload(),
 		payloadType, []byte(msg.GetNickname()), msg.GetNonce(),
-		timestamp)
+		timestamp, dmIDSalt)
 }
