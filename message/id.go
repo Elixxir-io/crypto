@@ -10,18 +10,18 @@ package message
 import (
 	"crypto/hmac"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 
 	"github.com/pkg/errors"
-	jww "github.com/spf13/jwalterweatherman"
+	"gitlab.com/elixxir/crypto/hash"
 	"gitlab.com/xx_network/primitives/id"
-	"golang.org/x/crypto/blake2b"
 )
 
 const (
 	// IDLen is the length of a MessageID.
 	IDLen  = 32
-	idSalt = "ChannelsMessageIdSalt"
+	idSalt = "xxMessageIdSalt"
 )
 
 // Error messages.
@@ -32,29 +32,42 @@ const (
 // ID is the unique identifier of a channel message.
 type ID [IDLen]byte
 
-// MakeMessageID returns the MessageID for the given serialized message.
+// MakeID returns the message ID for the given serialized message.
 //
 // Due to the fact that messages contain the round they are sent in, they are
 // replay resistant. This property, when combined with the collision resistance
 // of the hash function, ensures that an adversary will not be able to cause
 // multiple messages to have the same ID.
 //
-// The MessageID contain the channel ID as well to ensure that if a user is in
-// two channels that have messages with the same text sent to them in the same
-// round, the message IDs will differ.
+// The MessageID contain the target ID (channel ID or recipient ID) as
+// well to ensure that if a user is, e.g., in two channels that have messages
+// with the same text sent to them in the same round, the message IDs
+// will differ.
 //
-// Before the message has been encrypted but after padding has been added, the
-// MessageID is defined as:
+// The message ID is defined as:
 //
-//	H(message | chID | salt)
-func MakeID(message []byte, chID *id.ID) ID {
-	h, err := blake2b.New256(nil)
-	if err != nil {
-		jww.FATAL.Panicf("Failed to get Hash: %+v", err)
-	}
-	h.Write(message)
-	h.Write(chID[:])
+//	H(salt | targetID | roundID | message | otherParts...)
+//
+// message is usually all or part of a serialize message before padding has been
+// added and before encryption.
+//
+// Different message types can add otherParts to be included in the hash, such
+// as a timestamp or other element. Users of this function must agree on such
+// parts for the message ID to agree.
+func MakeID(targetID *id.ID, roundID uint64, message []byte,
+	otherParts ...[]byte) ID {
+	h := hash.DefaultHash()
 	h.Write([]byte(idSalt))
+	h.Write(targetID[:])
+
+	roundIDBytes := make([]byte, 8)
+	binary.LittleEndian.PutUint64(roundIDBytes, roundID)
+	h.Write(roundIDBytes)
+
+	h.Write(message)
+	for _, part := range otherParts {
+		h.Write(part)
+	}
 	midBytes := h.Sum(nil)
 
 	mid := ID{}
@@ -72,7 +85,7 @@ func (mid ID) Equals(mid2 ID) bool {
 // String returns a base64 encoded MessageID for debugging. This function
 // adheres to the fmt.Stringer interface.
 func (mid ID) String() string {
-	return "ChMsgID-" + base64.StdEncoding.EncodeToString(mid[:])
+	return "MsgID-" + base64.StdEncoding.EncodeToString(mid[:])
 }
 
 // Bytes returns a copy of the bytes in the message.

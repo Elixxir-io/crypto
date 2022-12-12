@@ -34,7 +34,8 @@ func TestMakeID_Unique(t *testing.T) {
 		contents := make([]byte, 1000)
 		prng.Read(contents)
 		inputs[i] = contents
-		results[i] = MakeID(contents, chID)
+		results[i] = MakeID(chID, 8675309, contents, []byte("extra"),
+			[]byte("stuff"))
 	}
 
 	// Check the results are different
@@ -61,8 +62,10 @@ func TestMakeID_Channels_Unique(t *testing.T) {
 		contents := make([]byte, 1000)
 		prng.Read(contents)
 
-		a := MakeID(contents, chID1)
-		b := MakeID(contents, chID2)
+		a := MakeID(chID1, 8675309, contents, []byte("extra"),
+			[]byte("stuff"))
+		b := MakeID(chID2, 8675309, contents, []byte("extra"),
+			[]byte("stuff"))
 		require.NotEqual(t, a, b)
 	}
 }
@@ -71,11 +74,11 @@ func TestMakeID_Channels_Unique(t *testing.T) {
 func TestMakeID_Constancy(t *testing.T) {
 	prng := rand.New(rand.NewSource(69))
 	expectedResults := []string{
-		"ChMsgID-936YPj78YUr6bJ9LrGILBeCBFCwB3aIwxX0UL3mMjtE=",
-		"ChMsgID-m+7QPDIGaDR2TFeksDH2JlikZAeU+E/f0amzCVlTYrY=",
-		"ChMsgID-ob/cikchYn1MBymZv8O0kv3Y5cxA3h4u2sCnlkSVaWM=",
-		"ChMsgID-ATMGXTjZL/GjY8HhS3hAUzAGudluCVA/062dhQsNvBw=",
-		"ChMsgID-spm/UbyfvrkmLiwZWB7DkyY30gXDWnwZM/90t0UsfFg=",
+		"MsgID-YJZshvyOMFXlz48qwmSHnwkg6zrQcLpVMTjS7av+XXo=",
+		"MsgID-Qj9e7R3jpvGsc1PuI3kqSpWBOfBt9ytNgXHJVBVsb8I=",
+		"MsgID-KdgNUUfO1WdsidTmkXu3xoWfTj+frHd4p8NJEWpzF6Y=",
+		"MsgID-zUHWA9NBZHXSl7f3UPQXDnf5+PEgQ/4BeKTT8SlF5/U=",
+		"MsgID-rm0a/bP9gnviq2Mld8ZjP0Bl57lU1h+fI0whkTSNFA0=",
 	}
 	results := make([]ID, len(expectedResults))
 
@@ -84,12 +87,13 @@ func TestMakeID_Constancy(t *testing.T) {
 	for i := range results {
 		contents := make([]byte, 1000)
 		prng.Read(contents)
-		results[i] = MakeID(contents, chID)
+		results[i] = MakeID(chID, 8675309, contents, []byte("extra"),
+			[]byte("stuff"))
 	}
 
 	// Check the results are different
 	for i, expected := range expectedResults {
-		require.Equal(t, results[i].String(), expected)
+		require.Equal(t, expected, results[i].String())
 	}
 }
 
@@ -105,7 +109,8 @@ func TestID_Equals(t *testing.T) {
 	for i := range results {
 		contents := make([]byte, 1000)
 		prng.Read(contents)
-		results[i] = MakeID(contents, chID)
+		results[i] = MakeID(chID, 8675309, contents, []byte("extra"),
+			[]byte("stuff"))
 	}
 
 	// Check that equals is equal when it shouldn't be, and is equal when it
@@ -133,7 +138,8 @@ func TestID_Bytes(t *testing.T) {
 	for i := range results {
 		contents := make([]byte, 1000)
 		prng.Read(contents)
-		results[i] = MakeID(contents, chID)
+		results[i] = MakeID(chID, 8675309, contents, []byte("extra"),
+			[]byte("stuff"))
 	}
 
 	// Check the bytes are the same and that modifying the copy
@@ -161,7 +167,8 @@ func TestID_DeepCopy(t *testing.T) {
 	for i := range results {
 		contents := make([]byte, 1000)
 		prng.Read(contents)
-		results[i] = MakeID(contents, chID)
+		results[i] = MakeID(chID, 8675309, contents, []byte("extra"),
+			[]byte("stuff"))
 	}
 
 	// Check the objects are the same and that modifying the copy does not
@@ -192,7 +199,8 @@ func TestID_Marshal_UnmarshalID(t *testing.T) {
 	for i := range results {
 		contents := make([]byte, 1000)
 		prng.Read(contents)
-		results[i] = MakeID(contents, chID)
+		results[i] = MakeID(chID, 8675309, contents, []byte("extra"),
+			[]byte("stuff"))
 	}
 
 	for _, result := range results {
@@ -222,7 +230,8 @@ func TestID_MarshalJSON_UnmarshalJSON(t *testing.T) {
 	chID, _ := id.NewRandomID(prng, id.User)
 	contents := make([]byte, 1000)
 	prng.Read(contents)
-	mid := MakeID(contents, chID)
+	mid := MakeID(chID, 8675309, contents, []byte("extra"),
+		[]byte("stuff"))
 
 	data, err := json.Marshal(mid)
 	if err != nil {
@@ -247,23 +256,24 @@ func TestID_MarshalJSON_UnmarshalJSON(t *testing.T) {
 func TestID_MarshalJSON_Consistency(t *testing.T) {
 	prng := rand.New(rand.NewSource(1337))
 	expectedData := []string{
-		`"JK2k7J12VtoLtHRwLwPoXKbsuDXt+b2oyWCYJyk/xFc="`,
-		`"STtKvxCEDy/UCfwIyq9v23B3X8eV1KqSB1CoAtitdk8="`,
-		`"uFts/Ug2D/A1A5WDifVuX7e5UZCelEo7rpLBLmhc/sI="`,
-		`"KZbCLx+aFVghkYymeU4/f18db8TDKRjcCoRW79WmEzY="`,
-		`"WEEwQ7d8b+UpcvymJliO7O4L5seD5FozTbWZIQQAcrY="`,
-		`"QEF6vG9W+/gerI3ThHtPtn4KKYCW69ebBfKLnyj6yqI="`,
-		`"fLBJTa6VkGxzHslAwpPIvr33enRNKmNAGLsGYjfocRk="`,
-		`"n2RCe4m55XkwPiV2tig6gA28cLUDQK9dwDrELlePTxI="`,
-		`"YmUVG3T41F70bhrNlx+8J6CYt51iKf2qJmKHsmIpBPY="`,
-		`"Qt1hNDqE8g4gEOa0OCk2BSEPBoY34WhT7B1+UyGh2Zg="`,
+		"\"aSbdvmZLlzePwBxzIbU6TOSQs4KCVofCTaKcfCs0arI=\"",
+		"\"TJ7aE8LVRX7uCZxm0+jhuZxbTD1723JduCxXvwH/65E=\"",
+		"\"EBZmB5X3XxVqaRgyjxsXNWu/rLor/zpA6rjSm1yJtzk=\"",
+		"\"IBXCzXko0lOHRzT+Pff5Kl+H6lU8in7lgsAL8MvgBNI=\"",
+		"\"9SWxXiHB8VEy+vpskHL/4VLskEdXQ6KIaK5hXZiMyxY=\"",
+		"\"NQ6QM+4RY/VHvvudaaQ809+rw2dMGabDtGyL7IbpqZU=\"",
+		"\"w38T5iTugE4WGYPtyNhdht9+tzDGwmoWmloKcqys0Ok=\"",
+		"\"4LBpemo2bBK6wKJ3FZCBFf7K8zU4rCAdO0VgN6oUykA=\"",
+		"\"24lSL/GzbMrvhRjGU90IXyCIac/0jsR68W7s5uhzdnE=\"",
+		"\"r9ggHIlNIAl+CRQERJMN0Xx26npydOHLa/rWuvnatbI=\"",
 	}
 
 	for _, expected := range expectedData {
 		chID, _ := id.NewRandomID(prng, id.User)
 		contents := make([]byte, 1000)
 		prng.Read(contents)
-		mid := MakeID(contents, chID)
+		mid := MakeID(chID, 8675309, contents, []byte("extra"),
+			[]byte("stuff"))
 
 		data, err := json.Marshal(mid)
 		require.NoError(t, err)
