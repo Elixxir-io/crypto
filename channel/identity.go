@@ -77,8 +77,8 @@ type Identity struct {
 	CodesetVersion uint8
 }
 
-// GenerateIdentity create a new channels identity from scratch and assigns
-// it a codename
+// GenerateIdentity creates a new private channel identity from scratch and
+// assigns it a codename.
 func GenerateIdentity(rng io.Reader) (PrivateIdentity, error) {
 	pub, priv, err := ed25519.GenerateKey(rng)
 	if err != nil {
@@ -98,8 +98,8 @@ func GenerateIdentity(rng io.Reader) (PrivateIdentity, error) {
 	return pi, nil
 }
 
-// ConstructIdentity creates a codename from an extant identity for a given
-// version
+// ConstructIdentity creates a codename in a public Identity from an extant
+// identity for a given codeset version.
 func ConstructIdentity(
 	pub ed25519.PublicKey, codesetVersion uint8) (Identity, error) {
 	constructor, exists := identityConstructorCodesets[codesetVersion]
@@ -164,7 +164,7 @@ func (i Identity) Marshal() []byte {
 	return append([]byte{i.CodesetVersion}, i.PubKey...)
 }
 
-// UnmarshalIdentity created an identity from a marshaled version
+// UnmarshalIdentity created an identity from a marshaled version.
 func UnmarshalIdentity(data []byte) (Identity, error) {
 	if len(data) != ed25519.PublicKeySize+1 {
 		return Identity{}, errors.New("data to unmarshal as an identity is " +
