@@ -158,7 +158,7 @@ func (priv *private) getOAEP() (js.Value, error) {
 // should be a string or list of strings indicating how the key will be used.
 func (priv *private) getRsaCryptoKey(
 	scheme, hash string, keyUsages ...any) (js.Value, error) {
-	data, err := x509.MarshalPKCS8PrivateKey(&priv.PrivateKey)
+	key, err := x509.MarshalPKCS8PrivateKey(&priv.PrivateKey)
 	if err != nil {
 		return js.Value{}, err
 	}
@@ -166,7 +166,7 @@ func (priv *private) getRsaCryptoKey(
 	algorithm := makeRsaHashedImportParams(scheme, hash)
 
 	result, awaitErr := Await(subtleCrypto.Call("importKey",
-		"pkcs8", CopyBytesToJS(data), algorithm, true, array.New(keyUsages...)))
+		"pkcs8", CopyBytesToJS(key), algorithm, true, array.New(keyUsages...)))
 	if awaitErr != nil {
 		return js.Value{}, js.Error{Value: awaitErr[0]}
 	}

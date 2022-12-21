@@ -38,9 +38,9 @@ func (*scheme) Generate(_ io.Reader, bits int) (PrivateKey, error) {
 		return nil, js.Error{Value: awaitErr[0]}
 	}
 
-	data := CopyBytesToGo(Uint8Array.New(result[0]))
+	keyData := CopyBytesToGo(Uint8Array.New(result[0]))
 
-	key, err := x509.ParsePKCS8PrivateKey(data)
+	key, err := x509.ParsePKCS8PrivateKey(keyData)
 	if err != nil {
 		return nil, errors.Errorf("could not decode key from PEM: %+v", err)
 	}
