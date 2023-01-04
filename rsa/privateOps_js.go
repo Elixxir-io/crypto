@@ -11,10 +11,14 @@ import (
 	"crypto"
 	gorsa "crypto/rsa"
 	"crypto/x509"
+	"github.com/pkg/errors"
 	"hash"
 	"io"
 	"syscall/js"
 )
+
+// ErrInvalidHash represents a failure to use a valid hashing algorithm.
+var ErrInvalidHash = errors.Errorf("%s hash required", crypto.SHA256)
 
 // SignPSS calculates the signature of digest using PSS.
 //
@@ -22,14 +26,23 @@ import (
 // function. The opts argument may be nil, in which case sensible defaults are
 // used.
 //
-// opts.Hash and hash are always ignored. Instead, SHA-256 will always be used.
-// random is also not used, instead the browsers implementation is used.
+// hash (and opts.Hash if opts is not nil) must be crypto.SHA256 because
+// Javascript's SubtleCrypto only supports SHA-256. An error is returned for all
+// other hashing algorithms. If opts.Hash is set, it overrides hash.
+//
+// random is not used. Instead, the browser's implementation is used.
 //
 // This function uses the Javascript SubtleCrypto implementation.
 //
 // Doc: https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/sign
-func (priv *private) SignPSS(_ io.Reader, _ crypto.Hash, hashed []byte,
+func (priv *private) SignPSS(_ io.Reader, hash crypto.Hash, hashed []byte,
 	opts *PSSOptions) ([]byte, error) {
+
+	if (opts == nil && hash != crypto.SHA256) ||
+		(opts != nil && opts.Hash != crypto.SHA256) {
+		return nil, ErrInvalidHash
+	}
+
 	if opts == nil {
 		opts = NewDefaultPSSOptions()
 	}
@@ -65,14 +78,20 @@ func (priv *private) SignPSS(_ io.Reader, _ crypto.Hash, hashed []byte,
 // identify the signed messages. As ever, signatures provide authenticity, not
 // confidentiality.
 //
-// hash is always ignored. Instead, SHA-256 will always be used. random is also
-// not used, instead the browsers implementation is used.
+// hash must be crypto.SHA256 because Javascript's SubtleCrypto only supports
+// SHA-256. An error is returned for all other hashing algorithms.
+//
+// random is not used. Instead, the browser's implementation is used.
 //
 // This function uses the Javascript SubtleCrypto implementation.
 //
 // Doc: https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/sign
 func (priv *private) SignPKCS1v15(
-	_ io.Reader, _ crypto.Hash, hashed []byte) ([]byte, error) {
+	_ io.Reader, hash crypto.Hash, hashed []byte) ([]byte, error) {
+
+	if hash != crypto.SHA256 {
+		return nil, ErrInvalidHash
+	}
 
 	key, err := priv.getPKCS1()
 	if err != nil {

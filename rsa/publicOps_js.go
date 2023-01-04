@@ -19,6 +19,7 @@ import (
 
 // ErrVerification represents a failure to verify a signature by a Javascript
 // SubtleCrypto operation.
+//
 // This error is modeled on crypto/rsa.ErrVerification. It is deliberately vague
 // to avoid adaptive attacks.
 var ErrVerification = errors.New("Javascript SubtleCrypto: verification error")
@@ -67,13 +68,19 @@ func (pub *public) EncryptOAEP(
 //
 // hashed is the result of hashing the input message using the given hash
 // function and sig is the signature. A valid signature is indicated by
-// returning a nil error. hash is ignored and instead SHA-256 is used.
+// returning a nil error.
+//
+// hash must be crypto.SHA256 because Javascript's SubtleCrypto only supports
+// SHA-256. An error is returned for all other hashing algorithms.
 //
 // This function uses the Javascript SubtleCrypto implementation.
 //
 // Doc: https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/verify
 func (pub *public) VerifyPKCS1v15(
-	_ crypto.Hash, hashed []byte, sig []byte) error {
+	hash crypto.Hash, hashed []byte, sig []byte) error {
+	if hash != crypto.SHA256 {
+		return ErrInvalidHash
+	}
 
 	key, err := pub.getPKCS1()
 	if err != nil {
@@ -97,14 +104,23 @@ func (pub *public) VerifyPKCS1v15(
 //
 // A valid signature is indicated by returning a nil error. digest must be the
 // result of hashing the input message using the given hash function. The opts
-// argument may be nil; in which case, sensible defaults are used. hash and
-// opts.Hash are both ignored and instead SHA-256 is used.
+// argument may be nil; in which case, sensible defaults are used.
+//
+// hash (and opts.Hash if opts is not nil) must be crypto.SHA256 because
+// Javascript's SubtleCrypto only supports SHA-256. An error is returned for all
+// other hashing algorithms. If opts.Hash is set, it overrides hash.
 //
 // This function uses the Javascript SubtleCrypto implementation.
 //
 // Doc: https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/verify
 func (pub *public) VerifyPSS(
-	_ crypto.Hash, digest []byte, sig []byte, opts *PSSOptions) error {
+	hash crypto.Hash, digest []byte, sig []byte, opts *PSSOptions) error {
+
+	if (opts == nil && hash != crypto.SHA256) ||
+		(opts != nil && opts.Hash != crypto.SHA256) {
+		return ErrInvalidHash
+	}
+
 	if opts == nil {
 		opts = NewDefaultPSSOptions()
 	}
