@@ -149,7 +149,7 @@ func TestChannel_EncryptRSAToPublic_DecryptRSAToPublic_BigKey_SmallPayload(t *te
 
 func TestChannel_EncryptRSAToPublic_DecryptRSAToPublic_NewChannel(t *testing.T) {
 	rng := csprng.NewSystemRNG()
-	packetSize := 1048
+	packetSize := 1038
 
 	ac, pk, err := NewChannel(
 		"Asymmetric_channel", "Channel description", Public, packetSize, rng)
@@ -183,7 +183,7 @@ func TestChannel_EncryptRSAToPublic_DecryptRSAToPublic_NewChannel(t *testing.T) 
 
 func TestChannel_EncryptRSAToPublic_DecryptRSAToPublic_SmallKey(t *testing.T) {
 	rng := csprng.NewSystemRNG()
-	packetSize := 1048
+	packetSize := 984
 	internalPacketSize := MaxSizedBroadcastPayloadSize(packetSize)
 	keySize, n := calculateKeySize(internalPacketSize, internalPacketSize/5)
 	if n < 4 {
@@ -250,7 +250,7 @@ func TestChannel_EncryptRSAToPublic_DecryptRSAToPublic_SmallKey(t *testing.T) {
 
 func TestChannel_EncryptRSAToPublic_DecryptRSAToPublic_SmallKey_SmallPayload(t *testing.T) {
 	rng := csprng.NewSystemRNG()
-	packetSize := 1048
+	packetSize := 984
 	internalPacketSize := MaxSizedBroadcastPayloadSize(packetSize)
 	keySize, n := calculateKeySize(internalPacketSize, internalPacketSize/5)
 	if n < 4 {
@@ -446,7 +446,7 @@ func TestChannel_EncryptRSAToPrivate_DecryptRSAToPrivate_BigKey_SmallPacket(t *t
 
 func TestChannel_EncryptRSAToPrivate_DecryptRSAToPrivate_SmallKey(t *testing.T) {
 	rng := csprng.NewSystemRNG()
-	packetSize := 1048
+	packetSize := 984
 	internalPacketSize := MaxSizedBroadcastPayloadSize(packetSize)
 	keySize, n := calculateKeySize(internalPacketSize, internalPacketSize/5)
 	if n < 4 {
@@ -513,7 +513,7 @@ func TestChannel_EncryptRSAToPrivate_DecryptRSAToPrivate_SmallKey(t *testing.T) 
 
 func TestChannel_EncryptRSAToPrivate_DecryptRSAToPrivate_SmallKey_SmallPacket(t *testing.T) {
 	rng := csprng.NewSystemRNG()
-	packetSize := 1048
+	packetSize := 984
 	internalPacketSize := MaxSizedBroadcastPayloadSize(packetSize)
 	keySize, n := calculateKeySize(internalPacketSize, internalPacketSize/5)
 	if n < 4 {
