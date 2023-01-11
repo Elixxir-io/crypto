@@ -11,6 +11,7 @@ import (
 	"crypto"
 	gorsa "crypto/rsa"
 	"crypto/x509"
+	"fmt"
 	"github.com/pkg/errors"
 	"hash"
 	"io"
@@ -65,6 +66,8 @@ func (priv *private) SignPSS(_ io.Reader, hash crypto.Hash, hashed []byte,
 		return nil, js.Error{Value: awaitErr[0]}
 	}
 
+	fmt.Printf("key: %s\n", js.Global().Get("JSON").Call("stringify", result[0]).String())
+
 	return CopyBytesToGo(Uint8Array.New(result[0])), nil
 }
 
@@ -103,6 +106,14 @@ func (priv *private) SignPKCS1v15(
 	if awaitErr != nil {
 		return nil, js.Error{Value: awaitErr[0]}
 	}
+
+	decoder := js.Global().Get("TextDecoder").New("utf8")
+	decoder.Call("decode", Uint8Array.New(result[0]))
+	// js.Global().Get("console").Call("error", js.Global().Call("btoa", decoder.Call("decode", Uint8Array.New(result[0]))).String())
+	// js.Global().Get("console").Call("error", js.Global().Call("btoa", Uint8Array.New(result[0])).String())
+	js.Global().Get("console").Call("error", result[0].Call("toString").String())
+
+	// fmt.Printf("0: %d\n", result[0].Index(0).Int())
 
 	return CopyBytesToGo(Uint8Array.New(result[0])), nil
 }

@@ -10,6 +10,7 @@ package rsa
 import (
 	"crypto"
 	"crypto/rand"
+	"runtime"
 	"strconv"
 	"testing"
 )
@@ -33,6 +34,13 @@ func TestSignVerifyPSS(t *testing.T) {
 	// Construct signing options
 	opts := NewDefaultPSSOptions()
 	hashFunc := opts.HashFunc()
+
+	// Javascript only uses SHA-256
+	if runtime.GOOS == "js" {
+		opts.Hash = crypto.SHA256
+		hashFunc = opts.HashFunc()
+		t.Log("Javascript environment; using SHA-256.")
+	}
 
 	for i := 0; i < numTest; i++ {
 		// Create hash
