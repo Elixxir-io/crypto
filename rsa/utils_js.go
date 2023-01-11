@@ -8,7 +8,6 @@
 package rsa
 
 import (
-	"fmt"
 	"github.com/pkg/errors"
 	"syscall/js"
 )
@@ -32,13 +31,12 @@ var (
 
 // handleJsError converts a Javascript error to a Go error.
 func handleJsError(value js.Value) error {
-	if value.IsUndefined() {
+	if value.IsNull() || value.IsUndefined() {
 		return nil
 	}
 
 	errMessage := value.Get("message")
 	if !errMessage.IsUndefined() && errMessage.String() != "" {
-		fmt.Printf("error: %q\n", value.Get("message").String())
 		return js.Error{Value: value}
 	}
 
