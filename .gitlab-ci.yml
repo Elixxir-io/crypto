@@ -16,7 +16,7 @@ before_script:
 
 stages:
   - test
-  - wasm-test
+  - build
   - trigger_integration
 
 
