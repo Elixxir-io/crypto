@@ -1,6 +1,7 @@
 package broadcast
 
 import (
+	jww "github.com/spf13/jwalterweatherman"
 	"gitlab.com/elixxir/crypto/rsa"
 )
 
@@ -19,6 +20,13 @@ func calculateKeySize(payloadSize int) (selectedKeySize int, selectedN int) {
 
 	// Calculate the maximum key size that can be used for a given payload
 	maxKeySize := (sizedPayloadSize - rsa.ELength) / 2
+
+	// handle the case where the calculated key size is negative.
+	// this should be completely impossible
+	if maxKeySize < 0 {
+		jww.FATAL.Printf("Calculated key size (%d) is negative,"+
+			"his is invalid and should be impossible", maxKeySize)
+	}
 
 	// truncate to ensure the calculated key size is a factor by 128
 	// to account for issues in javascript subtle crypto implementation
