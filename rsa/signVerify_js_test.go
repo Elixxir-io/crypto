@@ -13,8 +13,9 @@ import (
 	"crypto"
 	"crypto/rand"
 	gorsa "crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"io"
-	mRand "math/rand"
 	"strconv"
 	"testing"
 )
@@ -24,10 +25,65 @@ import (
 func Test_SignJS_VerifyGo_PSS(t *testing.T) {
 	// Generate keys
 	sLocal := GetScheme()
-	// rng := rand.Reader
-	rng := mRand.New(mRand.NewSource(42))
+	rng := rand.Reader
 
 	privKey, err := sLocal.GenerateDefault(rng)
+	if err != nil {
+		t.Errorf("GenerateDefault: %v", err)
+	}
+
+	pubKey := privKey.Public()
+
+	// Construct signing options
+	opts := NewDefaultPSSOptions()
+	opts.Hash = crypto.SHA256
+	hashFunc := opts.HashFunc()
+	opts.SaltLength = 32
+
+	for i := 0; i < numTest; i++ {
+		// Create hash
+		dataToSign := []byte(strconv.Itoa(i) + "test12345")
+		h := hashFunc.New()
+		h.Write(dataToSign)
+		hashed := h.Sum(nil)
+
+		// Construct signature
+		signed, err2 := privKey.SignPSS(rng, hashFunc, dataToSign, opts)
+		if err2 != nil {
+			t.Fatalf("SignPSS error: %+v", err2)
+		}
+
+		salt := make([]byte, 32)
+		if _, err := io.ReadFull(rng, salt); err != nil {
+			t.Fatal(err)
+		}
+
+		// Verify signature
+		err = gorsa.VerifyPSS(
+			pubKey.GetGoRSA(), hashFunc, hashed, signed, &opts.PSSOptions)
+		if err != nil {
+			t.Fatalf("VerifyPSS error: %+v", err)
+		}
+	}
+}
+
+// Smoke test: ensure that the Go implementation of PublicKey.VerifyPSS can
+// verify the output for the Javascript implementation of PrivateKey.SignPSS.
+// This test uses a private key generated in Go using a key size that is not a
+// multiple of 128 and imported into Go.
+func Test_SignJS_VerifyGo_PSS_Non128MultipleKeySize(t *testing.T) {
+	// Generate keys
+	sLocal := GetScheme()
+	rng := rand.Reader
+
+	goPrivKey, err := gorsa.GenerateKey(rng, 1032)
+	if err != nil {
+		t.Errorf("GenerateDefault: %v", err)
+	}
+	pemBytes := pem.EncodeToMemory(&pem.Block{
+		Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(goPrivKey)})
+
+	privKey, err := sLocal.UnmarshalPrivateKeyPEM(pemBytes)
 	if err != nil {
 		t.Errorf("GenerateDefault: %v", err)
 	}
@@ -113,8 +169,7 @@ func Test_SignGo_VerifyJS_PSS(t *testing.T) {
 func Test_SignGo_VerifyJS_PKCS1v152(t *testing.T) {
 	// Generate keys
 	sLocal := GetScheme()
-	// rng := rand.Reader
-	rng := mRand.New(mRand.NewSource(42))
+	rng := rand.Reader
 
 	privKey, err := sLocal.GenerateDefault(rng)
 	if err != nil {
@@ -153,8 +208,7 @@ func Test_SignGo_VerifyJS_PKCS1v152(t *testing.T) {
 func Test_SignJS_VerifyGO_PKCS1v152(t *testing.T) {
 	// Generate keys
 	sLocal := GetScheme()
-	// rng := rand.Reader
-	rng := mRand.New(mRand.NewSource(42))
+	rng := rand.Reader
 
 	privKey, err := sLocal.GenerateDefault(rng)
 	if err != nil {
