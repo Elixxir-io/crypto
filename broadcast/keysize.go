@@ -18,14 +18,17 @@ func calculateKeySize(payloadSize int) (selectedKeySize int, selectedN int) {
 	sizedPayloadSize := MaxSizedBroadcastPayloadSize(payloadSize)
 
 	// Calculate the maximum key size that can be used for a given payload
-	computedKeySize := (sizedPayloadSize - rsa.ELength) / 2
+	maxKeySize := (sizedPayloadSize - rsa.ELength) / 2
 
-	// ensure the calculated key size is dividable by 128 to account
-	// for issues in javascript
+	// truncate to ensure the calculated key size is a factor by 128
+	// to account for issues in javascript subtle crypto implementation
+	// of RSA
 	// this code takes advantage of the fact that 128 = 2^7, meaning
 	// a number can be set to be divisable by 128 by ensuring the
-	// bottom 7 bits are zero in 0s complement (unsigned) space
-	selectedKeySize = int(uint(computedKeySize) & 0xffffffffffffff80)
+	// bottom 7 bits are zero in 2s complement (signed) space
+	// note: the highest bit is 0 because it is always 0
+	// for positive numbers in 2s complement signed space
+	selectedKeySize = maxKeySize & 0x7fffffffffffff80
 
 	// there are 2 sub payloads, but 1 will be used for the public key,
 	// so the number of usable sub payloads is 1
